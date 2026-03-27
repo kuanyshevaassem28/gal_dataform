@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_zenith",
+  name: "external_staging_zenith_charge_pp2"
+}
