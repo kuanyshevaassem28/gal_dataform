@@ -1,0 +1,50 @@
+config {
+  type: "table",
+  schema: "gal_bsu_pp2",
+  name: "staging_bsu_pp2_arc_zames",
+  tags: ["bsu_pp2_arc_zames", "bsu_pp2", "arc_zames", "staging"]
+}
+
+WITH src AS (
+  SELECT
+    ID,
+    ZAKASID,
+    ZAMNUM,
+    ZAMVOL,
+    ZAMHUMID,
+    ZAMHUMEND,
+    ZAMTEMP,
+    COALESCE(TIMESTAMP_MICROS(DIV(ZAMSTARTTIME, 1000)), CURRENT_TIMESTAMP()) AS ZAMSTARTTIME,
+    COALESCE(TIMESTAMP_MICROS(DIV(ZAMSTUNLTIME, 1000)), CURRENT_TIMESTAMP()) AS ZAMSTUNLTIME,
+    COALESCE(TIMESTAMP_MICROS(DIV(ZAMENDTIME,   1000)), CURRENT_TIMESTAMP()) AS ZAMENDTIME,
+    ZAMCHIEFNAME,
+    COALESCE(ZAMSTATUS, 0) AS ZAMSTATUS,
+    ZAMVYT1,
+    ZAMVYT2,
+    ZAMVYT3,
+    ZAMVYT4,
+    ZAMWZ
+  FROM ${ref("external_staging_bsu_pp2_arc_zames")}
+)
+
+SELECT
+  ID,
+  ZAKASID,
+  ZAMNUM,
+  ZAMVOL,
+  ZAMHUMID,
+  ZAMHUMEND,
+  ZAMTEMP,
+  ZAMSTARTTIME,
+  ZAMSTUNLTIME,
+  ZAMENDTIME,
+  ZAMCHIEFNAME,
+  ZAMSTATUS,
+  ZAMVYT1,
+  ZAMVYT2,
+  ZAMVYT3,
+  ZAMVYT4,
+  ZAMWZ,
+ 
+  TO_HEX(SHA256(CAST(ID AS STRING))) AS surrogate_key
+FROM src
