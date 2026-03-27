@@ -1,0 +1,177 @@
+config {
+  type: "incremental",
+  schema: "gal_wialon",
+  name: "history_wialon_trips_vehicles",
+  tags: ["wialon_trips", "wialon", "trips", "vehicles", "history", "scd2"],
+  description: "Wialon — SCD-2 история поездок по ТС, surrogate_key = name|date.",
+
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    number:          "Номер строки Wialon-отчёта (level=2)",
+    date:            "Дата поездки",
+    name:            "Название ТС / объекта",
+    start_type:      "Тип начала поездки",
+    start_pos:       "Координаты/адрес начала",
+    end_type:        "Тип окончания поездки",
+    end_pos:         "Координаты/адрес окончания",
+    distance_km:     "Дистанция, км",
+    avg_speed_km_h:  "Средняя скорость, км/ч",
+    max_speed_km_h:  "Максимальная скорость, км/ч",
+    total_time_sec:  "Длительность поездки, сек",
+    _ingested_at:    "Время загрузки отчёта",
+
+    surrogate_key:   "Суррогатный ключ записи: name|date",
+    valid_from:      "Начало действия версии записи",
+    valid_to:        "Конец действия версии записи",
+    is_current:      "Флаг актуальной версии (TRUE — текущая)"
+  }
+}
+
+
+${when(incremental(), `
+
+WITH S AS (
+  SELECT
+    number,
+    date,
+    name,
+    start_type,
+    start_pos,
+    end_type,
+    end_pos,
+    distance_km,
+    avg_speed_km_h,
+    max_speed_km_h,
+    total_time_sec,
+    _ingested_at,
+ 
+    TO_HEX(SHA256(CONCAT(
+      COALESCE(name, ''), '|',
+      COALESCE(CAST(date AS STRING), '')
+    ))) AS surrogate_key
+
+  FROM ${ref("staging_wialon_trips_vehicles")}
+),
+
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+  WHERE
+       h.surrogate_key IS NULL
+    OR (
+         s.start_type      IS DISTINCT FROM h.start_type
+      OR s.start_pos       IS DISTINCT FROM h.start_pos
+      OR s.end_type        IS DISTINCT FROM h.end_type
+      OR s.end_pos         IS DISTINCT FROM h.end_pos
+      OR s.distance_km     IS DISTINCT FROM h.distance_km
+      OR s.avg_speed_km_h  IS DISTINCT FROM h.avg_speed_km_h
+      OR s.max_speed_km_h  IS DISTINCT FROM h.max_speed_km_h
+      OR s.total_time_sec  IS DISTINCT FROM h.total_time_sec
+    )
+),
+
+CHANGED_ROWS AS (
+  SELECT h.*
+  FROM H_CUR h
+  JOIN NEW_OR_CHANGED s
+    ON h.surrogate_key = s.surrogate_key
+)
+
+-- 🟢 вставляем новые версии
+SELECT
+  n.number,
+  n.date,
+  n.name,
+  n.start_type,
+  n.start_pos,
+  n.end_type,
+  n.end_pos,
+  n.distance_km,
+  n.avg_speed_km_h,
+  n.max_speed_km_h,
+  n.total_time_sec,
+  n._ingested_at,
+  n.surrogate_key,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+-- 🔴 закрываем старые версии
+SELECT
+  c.number,
+  c.date,
+  c.name,
+  c.start_type,
+  c.start_pos,
+  c.end_type,
+  c.end_pos,
+  c.distance_km,
+  c.avg_speed_km_h,
+  c.max_speed_km_h,
+  c.total_time_sec,
+  c._ingested_at,
+  c.surrogate_key,
+  FALSE AS is_current,
+  c.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to
+FROM CHANGED_ROWS c
+
+`, `
+
+-- 🔹 Первый запуск (полная загрузка)
+
+WITH S AS (
+  SELECT
+    number,
+    date,
+    name,
+    start_type,
+    start_pos,
+    end_type,
+    end_pos,
+    distance_km,
+    avg_speed_km_h,
+    max_speed_km_h,
+    total_time_sec,
+    _ingested_at,
+
+    TO_HEX(SHA256(CONCAT(
+      COALESCE(name, ''), '|',
+      COALESCE(CAST(date AS STRING), '')
+    ))) AS surrogate_key
+
+  FROM ${ref("staging_wialon_trips_vehicles")}
+)
+
+SELECT
+  number,
+  date,
+  name,
+  start_type,
+  start_pos,
+  end_type,
+  end_pos,
+  distance_km,
+  avg_speed_km_h,
+  max_speed_km_h,
+  total_time_sec,
+  _ingested_at,
+  surrogate_key,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S
+
+`)}
