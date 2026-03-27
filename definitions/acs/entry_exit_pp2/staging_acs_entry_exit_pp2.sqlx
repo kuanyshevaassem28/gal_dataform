@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: "gal_acs",
+  name: "staging_acs_entry_exit_pp2",
+  tags: ["acs_entry_exit_pp2", "acs", "entry_exit_pp2", "staging"],
+  description: "ACS PP2: staging проходов/выходов, нормализация типов и удаление полностью идентичных дублей.",
+  columns: {
+    employee_name: "ФИО сотрудника",
+    company: "Компания сотрудника",
+    department: "Подразделение сотрудника",
+    event_date: "Дата события (тип DATE)",
+    event_time: "Время события (тип TIME)",
+    event_type: "Тип события (вход / выход / иное)",
+    access_zone: "Зона доступа",
+    door: "Дверь или турникет",
+    key_code: "Код карты или ключа доступа",
+    card_number: "Номер карты (key_identifier)",
+    surrogate_key: "Уникальный хэш события"
+  }
+}
+
+WITH src AS (
+  SELECT * FROM ${ref("external_staging_acs_entry_exit_pp2")}
+),
+
+typed AS (
+  SELECT DISTINCT
+    employee_name,
+    company,
+    department,
+    SAFE.PARSE_DATE('%Y-%m-%d', event_date) AS event_date,
+    SAFE.PARSE_TIME('%H:%M:%S', event_time) AS event_time,
+    event_type,
+    access_zone,
+    door,
+    key_code,
+    key_identifier AS card_number
+  FROM src
+)
+
+SELECT
+  *,
+  TO_HEX(SHA256(
+        COALESCE(employee_name, '')   || '|' ||
+        COALESCE(company, '')         || '|' ||
+        COALESCE(department, '')      || '|' ||
+        COALESCE(CAST(event_date   AS STRING), '') || '|' ||
+        COALESCE(CAST(event_time   AS STRING), '') || '|' ||
+        COALESCE(event_type, '')      || '|' ||
+        COALESCE(access_zone, '')     || '|' ||
+        COALESCE(door, '')            || '|' ||
+        COALESCE(key_code, '')
+      )) AS surrogate_key
+FROM typed
