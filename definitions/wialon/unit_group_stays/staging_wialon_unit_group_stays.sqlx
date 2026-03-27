@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  schema: "gal_wialon",
+  name: "staging_wialon_unit_group_stays",
+  tags: ["wialon_unit_group_stays", "wialon", "unit_group_stays", "staging"],
+  description: "Wialon Unit Group Stays: level=2, нормализация duration → duration_sec.",
+
+  columns: {
+    number:        "Номер строки отчёта (level=2)",
+    date:          "Дата отчёта (строка из level=1 name)",
+    name:          "Название группы / объекта",
+    start_time:    "Время начала пребывания",
+    end_time:      "Время окончания пребывания",
+    duration_sec:  "Длительность пребывания, секунды (из duration H:M:S)",
+    position:      "Позиция (адрес/координаты)",
+    count:       "Счётчик (количество)"
+  }
+}
+
+WITH joined AS (
+  SELECT
+    t2.number,
+    t1.name AS date,
+    t2.name,
+    t2.Start     AS start_time,
+    t2.End       AS end_time,
+    t2.Duration  AS duration,
+    t2.Position  AS position,
+    t2.Count     AS `count`
+  FROM ${ref("external_staging_wialon_unit_group_stays")} AS t2
+  JOIN ${ref("external_staging_wialon_unit_group_stays")} AS t1
+    ON t1.number       = t2.parent_number
+   AND t1._ingested_at = t2._ingested_at
+  WHERE t2.level = 2 AND t1.level = 1
+)
+
+SELECT
+  number,
+  date,
+  name,
+  start_time,
+  end_time,
+ 
+  CASE ARRAY_LENGTH(SPLIT(REGEXP_REPLACE(IFNULL(duration, ''), r'[^0-9:]', ''), ':'))
+    WHEN 3 THEN
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(duration, r'[^0-9:]', ''), ':')[SAFE_OFFSET(0)] AS INT64), 0) * 3600 +
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(duration, r'[^0-9:]', ''), ':')[SAFE_OFFSET(1)] AS INT64), 0) *   60 +
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(duration, r'[^0-9:]', ''), ':')[SAFE_OFFSET(2)] AS INT64), 0)
+    WHEN 2 THEN
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(duration, r'[^0-9:]', ''), ':')[SAFE_OFFSET(0)] AS INT64), 0) *   60 +
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(duration, r'[^0-9:]', ''), ':')[SAFE_OFFSET(1)] AS INT64), 0)
+    WHEN 1 THEN
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(duration, r'[^0-9:]', ''), ':')[SAFE_OFFSET(0)] AS INT64), 0)
+    ELSE 0
+  END AS duration_sec,
+
+  position,
+  `count`
+FROM joined
