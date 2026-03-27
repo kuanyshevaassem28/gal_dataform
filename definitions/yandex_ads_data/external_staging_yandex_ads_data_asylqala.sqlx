@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "yandex_ads_data",
+  name: "external_staging_yandex_ads_data_asylqala"
+}
