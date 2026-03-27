@@ -1,0 +1,131 @@
+config {
+  type: "incremental",
+  schema: "gal_zenith",
+  name: "history_zenith_charge_pp2",
+  tags: ["zenith", "charge_pp2", "zenith_charge_pp2", "history"],
+  description: "ZENITH PP2: SCD-2 история с is_current/valid_from/valid_to",
+ 
+  uniqueKey: ["surrogate_key", "valid_from"],
+}
+ 
+${when(incremental(), `
+
+WITH S AS (
+  SELECT *
+  FROM ${ref("staging_zenith_charge_pp2")}
+),
+
+N AS (
+  SELECT
+    s.FileName               AS file_name,
+    s.Date                   AS date,
+    s.Betriebsdatenerfassung AS operational_timestamp,
+    s.Mitarbeiter            AS employee,
+    s.Rezeptname             AS recipe_name,
+    s.Form1, s.Form2, s.Form3, s.Form4, s.Form5, s.Form6,
+    s.BDEgestartet           AS bde_started,
+    s.BDEgestoppt            AS bde_stopped,
+    s.BDELaufzeit            AS bde_runtime,
+    s.ProSchichtAVG          AS per_shift_avg,
+    s.GesamCyclest           AS total_cycles,
+    s.ProSchichtCycles        AS per_shift_cycles,
+    s.AnzBretterTKProSchicht  AS dry_chamber_boards_per_shift,
+    s.Automatikbetrieb        AS automatic_operation,
+    s.Handbetrieb            AS manual_operation,
+    s.Einrichtbetrieb        AS setup_operation,
+    s.AufBretter             AS on_boards,
+    s.AufKernbeton           AS on_core_concrete,
+    s.AufVorsatzbeton        AS on_facing_concrete,
+    s.AufProdukttransport    AS on_product_transport,
+    s.Anlagenstoerung        AS plant_malfunction,
+
+     
+    TO_HEX(SHA256(CONCAT(
+      IFNULL(CAST(s.BDEgestartet AS STRING), ''), '|',
+      IFNULL(CAST(s.BDEgestoppt  AS STRING), '')
+    ))) AS surrogate_key
+  FROM S s
+),
+
+H_CUR AS (
+  SELECT surrogate_key
+  FROM ${self()}
+  WHERE 1=1
+),
+
+NEW_OR_CHANGED AS (
+  SELECT n.*
+  FROM N n
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL     
+)
+
+SELECT
+  file_name, date, operational_timestamp, employee, recipe_name,
+  form1, form2, form3, form4, form5, form6,
+  bde_started, bde_stopped, bde_runtime,
+  per_shift_avg, total_cycles, per_shift_cycles, dry_chamber_boards_per_shift, 
+  automatic_operation, manual_operation, setup_operation,
+  on_boards, on_core_concrete, on_facing_concrete, on_product_transport,
+  plant_malfunction,
+  surrogate_key,
+  TRUE  AS is_current,                     
+  CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to
+FROM NEW_OR_CHANGED
+
+`, `
+ 
+WITH S AS (
+  SELECT *
+  FROM ${ref("staging_zenith_charge_pp2")}
+),
+
+N AS (
+  SELECT
+    s.FileName               AS file_name,
+    s.Date                   AS date,
+    s.Betriebsdatenerfassung AS operational_timestamp,
+    s.Mitarbeiter            AS employee,
+    s.Rezeptname             AS recipe_name,
+    s.Form1, s.Form2, s.Form3, s.Form4, s.Form5, s.Form6,
+    s.BDEgestartet           AS bde_started,
+    s.BDEgestoppt            AS bde_stopped,
+    s.BDELaufzeit            AS bde_runtime,
+    s.ProSchichtAVG          AS per_shift_avg,
+    s.GesamCyclest           AS total_cycles,
+    s.ProSchichtCycles       AS per_shift_cycles,
+    s.Automatikbetrieb       AS automatic_operation,
+    s.AnzBretterTKProSchicht AS dry_chamber_boards_per_shift,
+    s.Handbetrieb            AS manual_operation,
+    s.Einrichtbetrieb        AS setup_operation,
+    s.AufBretter             AS on_boards,
+    s.AufKernbeton           AS on_core_concrete,
+    s.AufVorsatzbeton        AS on_facing_concrete,
+    s.AufProdukttransport    AS on_product_transport,
+    s.Anlagenstoerung        AS plant_malfunction,
+
+    TO_HEX(SHA256(CONCAT(
+      IFNULL(CAST(s.BDEgestartet AS STRING), ''), '|',
+      IFNULL(CAST(s.BDEgestoppt  AS STRING), '')
+    ))) AS surrogate_key
+  FROM S s
+),
+ 
+DEDUP AS (
+  SELECT *
+  FROM N
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY surrogate_key
+    ORDER BY operational_timestamp DESC NULLS LAST
+  ) = 1
+)
+
+SELECT
+  d.*,
+  TRUE  AS is_current,
+  CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to
+FROM DEDUP d
+
+`)}
