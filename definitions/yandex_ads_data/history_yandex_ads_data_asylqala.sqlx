@@ -1,6 +1,6 @@
 config {
   type: "operations",
-  schema: "gal_yandex_ads_data",
+  schema: "yandex_ads_data",
   name: "history_yandex_ads_data_asylqala",
   hasOutput: true, 
   tags: ["yandex_ads_data_asylqala", "yandex_ads", "history", "scd2", "asylqala"],
@@ -61,7 +61,7 @@ USING (
       Clicks,
       Cost,
       surrogate_key
-    FROM ${ref("staging_yandex_ads_data_asylqala")}
+    FROM ${ref("staging__asylqala")}
   ),
 
   h_cur AS (
