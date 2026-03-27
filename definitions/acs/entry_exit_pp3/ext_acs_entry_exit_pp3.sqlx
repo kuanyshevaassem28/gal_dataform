@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_acs",
+  name: "external_staging_acs_entry_exit_pp3"
+}
