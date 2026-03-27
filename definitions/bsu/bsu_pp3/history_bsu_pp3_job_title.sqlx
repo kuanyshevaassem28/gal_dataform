@@ -1,0 +1,187 @@
+config {
+  type: "operations",
+  schema: "gal_bsu_pp3",
+  name: "history_bsu_pp3_job_title",
+  hasOutput: true,
+  dependencies: ["staging_bsu_pp3_job_title"],
+  tags: ["bsu_pp3_job_title", "history", "scd2"],
+
+  description: "BSU PP3 JOB_TITLE — SCD2 история заказов. Surrogate key = SHA256(ORDERID). Поддерживает версионность через is_current, valid_from, valid_to.",
+
+  columns: {
+    ORDERID: "Первичный идентификатор заказа.",
+    ZAKAZNUM: "Номер заказа.",
+    STATUS: "Статус заказа.",
+    LINEID: "Идентификатор производственной линии.",
+    LINEFORCONT: "Линия для контейнера.",
+    CONTNUM: "Номер контейнера.",
+    CREATEDATE: "Дата создания заказа.",
+    ELTRECIPENUM: "Номер рецепта.",
+    RECIPEGROUP: "Группа рецепта.",
+    RECIPENAME: "Название рецепта.",
+    CUSTOMERGROUP: "Группа клиента.",
+    PURPOSE: "Назначение заказа.",
+    STARTTIME: "Время начала выполнения.",
+    TIME1: "Дополнительное время 1.",
+    TIME2: "Дополнительное время 2.",
+    ENDTIME: "Время завершения.",
+    CHIEFNAME: "Ответственный сотрудник.",
+    RECIPESNR: "Серийный номер рецепта.",
+    EXITP: "Параметр выхода.",
+    MARSHVY: "Маршрут выполнения.",
+    MARSHDTL: "Детализация маршрута.",
+    PLANVOLUME: "Плановый объем.",
+    PLANZAMVOL: "Плановый объем замеса.",
+    PLANZAM: "Плановое количество замесов.",
+    LIMZAMVOL: "Лимит объема замеса.",
+    STOPZAM: "Флаг остановки замеса.",
+    SUMVOL: "Суммарный объем.",
+    ZAMNUM: "Количество замесов.",
+    SMESITELI: "Смесители.",
+    VARINTRPRZA: "Параметр варианта приготовления.",
+    VARVYSM: "Вариант выгрузки смеси.",
+    SMPSYSTIME: "Системное время SMP.",
+    ADDRESS: "Адрес доставки.",
+    NUMBERAUTO: "Номер автомобиля.",
+    FIODRIVER: "ФИО водителя.",
+    RESERV1: "Резервное поле.",
+    RECIPECODE: "Код рецепта.",
+    NORMCURR: "Нормативная корректировка.",
+    DNORMCURR: "Дополнительная корректировка.",
+    NTPREDVSM: "Предварительный показатель.",
+    SENSVL: "Чувствительность.",
+    DZMAX: "Максимальное отклонение.",
+    P_PLANVOL: "Плановый объем (P).",
+    P_FACTVOL: "Фактический объем (P).",
+    P_STATE: "Состояние (P).",
+    FLAGCRREPORT: "Флаг отчетности.",
+    AV_GUID1: "GUID 1.",
+    AV_GUID2: "GUID 2.",
+    AV_ZAK: "Внешний номер заказа.",
+    AV_NAME: "Название объекта.",
+    WNTM1: "Доп. параметр 1.",
+    WNTM2: "Доп. параметр 2.",
+    WNTM3: "Доп. параметр 3.",
+    WNTM4: "Доп. параметр 4.",
+    surrogate_key: "Surrogate key = SHA256(ORDERID).",
+    is_current: "TRUE — текущая версия записи.",
+    valid_from: "Дата начала действия версии.",
+    valid_to: "Дата окончания действия версии (NULL = актуальная запись)."
+  }
+}
+
+-- Устанавливаем текущее время для меток валидности
+DECLARE run_dt DATETIME DEFAULT CURRENT_DATETIME('Asia/Almaty');
+
+-- =====================================================
+-- ШАГ 1. Закрываем старые версии (is_current = FALSE)
+-- Мы ищем записи в истории, для которых в staging пришли изменения 
+-- или которые просто существуют в актуальном статусе.
+-- =====================================================
+
+UPDATE ${self()} h
+SET
+  is_current = FALSE,
+  valid_to   = run_dt
+WHERE
+  h.is_current = TRUE
+  AND EXISTS (
+    SELECT 1
+    FROM ${ref("staging_bsu_pp3_job_title")} s
+    WHERE
+      TO_HEX(SHA256(CAST(s.ORDERID AS STRING))) = h.surrogate_key
+      AND (
+           s.ZAKAZNUM      IS DISTINCT FROM h.ZAKAZNUM
+        OR s.STATUS        IS DISTINCT FROM h.STATUS
+        OR s.LINEID        IS DISTINCT FROM h.LINEID
+        OR s.LINEFORCONT   IS DISTINCT FROM h.LINEFORCONT
+        OR s.CONTNUM       IS DISTINCT FROM h.CONTNUM
+        OR s.CREATEDATE    IS DISTINCT FROM h.CREATEDATE
+        OR s.ELTRECIPENUM  IS DISTINCT FROM h.ELTRECIPENUM
+        OR s.RECIPEGROUP   IS DISTINCT FROM h.RECIPEGROUP
+        OR s.RECIPENAME    IS DISTINCT FROM h.RECIPENAME
+        OR s.CUSTOMERGROUP IS DISTINCT FROM h.CUSTOMERGROUP
+        OR s.PURPOSE       IS DISTINCT FROM h.PURPOSE
+        OR s.STARTTIME     IS DISTINCT FROM h.STARTTIME
+        OR s.TIME1         IS DISTINCT FROM h.TIME1
+        OR s.TIME2         IS DISTINCT FROM h.TIME2
+        OR s.ENDTIME       IS DISTINCT FROM h.ENDTIME
+        OR s.CHIEFNAME     IS DISTINCT FROM h.CHIEFNAME
+        OR s.RECIPESNR     IS DISTINCT FROM h.RECIPESNR
+        OR s.EXITP         IS DISTINCT FROM h.EXITP
+        OR s.MARSHVY       IS DISTINCT FROM h.MARSHVY
+        OR s.MARSHDTL      IS DISTINCT FROM h.MARSHDTL
+        OR s.PLANVOLUME    IS DISTINCT FROM h.PLANVOLUME
+        OR s.PLANZAMVOL    IS DISTINCT FROM h.PLANZAMVOL
+        OR s.PLANZAM       IS DISTINCT FROM h.PLANZAM
+        OR s.LIMZAMVOL     IS DISTINCT FROM h.LIMZAMVOL
+        OR s.STOPZAM       IS DISTINCT FROM h.STOPZAM
+        OR s.SUMVOL        IS DISTINCT FROM h.SUMVOL
+        OR s.ZAMNUM        IS DISTINCT FROM h.ZAMNUM
+        OR s.SMESITELI     IS DISTINCT FROM h.SMESITELI
+        OR s.VARINTRPRZA   IS DISTINCT FROM h.VARINTRPRZA
+        OR s.VARVYSM       IS DISTINCT FROM h.VARVYSM
+        OR s.SMPSYSTIME    IS DISTINCT FROM h.SMPSYSTIME
+        OR s.ADDRESS       IS DISTINCT FROM h.ADDRESS
+        OR s.NUMBERAUTO    IS DISTINCT FROM h.NUMBERAUTO
+        OR s.FIODRIVER     IS DISTINCT FROM h.FIODRIVER
+        OR s.RESERV1       IS DISTINCT FROM h.RESERV1
+        OR s.RECIPECODE    IS DISTINCT FROM h.RECIPECODE
+        OR s.NORMCURR      IS DISTINCT FROM h.NORMCURR
+        OR s.DNORMCURR     IS DISTINCT FROM h.DNORMCURR
+        OR s.NTPREDVSM     IS DISTINCT FROM h.NTPREDVSM
+        OR s.SENSVL        IS DISTINCT FROM h.SENSVL
+        OR s.DZMAX         IS DISTINCT FROM h.DZMAX
+        OR s.P_PLANVOL     IS DISTINCT FROM h.P_PLANVOL
+        OR s.P_FACTVOL     IS DISTINCT FROM h.P_FACTVOL
+        OR s.P_STATE       IS DISTINCT FROM h.P_STATE
+        OR s.FLAGCRREPORT  IS DISTINCT FROM h.FLAGCRREPORT
+        OR s.AV_GUID1      IS DISTINCT FROM h.AV_GUID1
+        OR s.AV_GUID2      IS DISTINCT FROM h.AV_GUID2
+        OR s.AV_ZAK        IS DISTINCT FROM h.AV_ZAK
+        OR s.AV_NAME       IS DISTINCT FROM h.AV_NAME
+        OR s.WNTM1         IS DISTINCT FROM h.WNTM1
+        OR s.WNTM2         IS DISTINCT FROM h.WNTM2
+        OR s.WNTM3         IS DISTINCT FROM h.WNTM3
+        OR s.WNTM4         IS DISTINCT FROM h.WNTM4
+      )
+  );
+ 
+
+INSERT INTO ${self()} (
+  ORDERID, ZAKAZNUM, STATUS, LINEID, LINEFORCONT, CONTNUM,
+  CREATEDATE, ELTRECIPENUM, RECIPEGROUP, RECIPENAME, CUSTOMERGROUP, PURPOSE,
+  STARTTIME, TIME1, TIME2, ENDTIME,
+  CHIEFNAME, RECIPESNR, EXITP, MARSHVY, MARSHDTL,
+  PLANVOLUME, PLANZAMVOL, PLANZAM, LIMZAMVOL, STOPZAM, SUMVOL,
+  ZAMNUM, SMESITELI, VARINTRPRZA, VARVYSM,
+  SMPSYSTIME, ADDRESS, NUMBERAUTO, FIODRIVER, RESERV1, RECIPECODE,
+  NORMCURR, DNORMCURR, NTPREDVSM, SENSVL, DZMAX,
+  P_PLANVOL, P_FACTVOL, P_STATE, FLAGCRREPORT,
+  AV_GUID1, AV_GUID2, AV_ZAK, AV_NAME,
+  WNTM1, WNTM2, WNTM3, WNTM4,
+  surrogate_key, is_current, valid_from, valid_to
+)
+SELECT
+  s.ORDERID, s.ZAKAZNUM, s.STATUS, s.LINEID, s.LINEFORCONT, s.CONTNUM,
+  s.CREATEDATE, s.ELTRECIPENUM, s.RECIPEGROUP, s.RECIPENAME, s.CUSTOMERGROUP, s.PURPOSE,
+  s.STARTTIME, s.TIME1, s.TIME2, s.ENDTIME,
+  s.CHIEFNAME, s.RECIPESNR, s.EXITP, s.MARSHVY, s.MARSHDTL,
+  s.PLANVOLUME, s.PLANZAMVOL, s.PLANZAM, s.LIMZAMVOL, s.STOPZAM, s.SUMVOL,
+  s.ZAMNUM, s.SMESITELI, s.VARINTRPRZA, s.VARVYSM,
+  s.SMPSYSTIME, s.ADDRESS, s.NUMBERAUTO, s.FIODRIVER, s.RESERV1, s.RECIPECODE,
+  s.NORMCURR, s.DNORMCURR, s.NTPREDVSM, s.SENSVL, s.DZMAX,
+  s.P_PLANVOL, s.P_FACTVOL, s.P_STATE, s.FLAGCRREPORT,
+  s.AV_GUID1, s.AV_GUID2, s.AV_ZAK, s.AV_NAME,
+  s.WNTM1, s.WNTM2, s.WNTM3, s.WNTM4,
+  TO_HEX(SHA256(CAST(s.ORDERID AS STRING))) AS surrogate_key,
+  TRUE AS is_current,
+  run_dt AS valid_from,
+  NULL AS valid_to
+FROM ${ref("staging_bsu_pp3_job_title")} s
+WHERE NOT EXISTS (
+  SELECT 1 
+  FROM ${self()} h 
+  WHERE h.surrogate_key = TO_HEX(SHA256(CAST(s.ORDERID AS STRING)))
+    AND h.is_current = TRUE
+);
