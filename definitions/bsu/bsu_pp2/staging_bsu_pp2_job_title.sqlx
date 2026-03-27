@@ -1,0 +1,87 @@
+config {
+  type: "table",
+  schema: "gal_bsu_pp2",
+  name: "staging_bsu_pp2_job_title",
+  tags: ["bsu_pp2_job_title", "bsu_pp2", "job_title", "history", "scd2"]
+}
+
+WITH src AS (
+  SELECT
+    COALESCE(ORDERID, 0)                         AS ORDERID,       -- NOT NULL
+    ZAKAZNUM,
+    STATUS,
+    COALESCE(LINEID, 0)                          AS LINEID,        -- NOT NULL
+    LINEFORCONT,
+    CONTNUM,
+    COALESCE(CREATEDATE, CURRENT_DATE())         AS CREATEDATE,    -- NOT NULL
+    ELTRECIPENUM,
+    COALESCE(TRIM(RECIPEGROUP), '')              AS RECIPEGROUP,   -- NOT NULL
+    RECIPENAME,
+    COALESCE(TRIM(CUSTOMERGROUP), '')            AS CUSTOMERGROUP, -- NOT NULL
+    PURPOSE,
+ 
+    COALESCE(
+      SAFE.TIMESTAMP_SECONDS(DIV(SAFE_CAST(STARTTIME AS INT64), 1000000000)),
+      CURRENT_TIMESTAMP()
+    ) AS STARTTIME,
+    TIME1,
+    TIME2,
+    COALESCE(
+      SAFE.TIMESTAMP_SECONDS(DIV(SAFE_CAST(ENDTIME AS INT64), 1000000000)),
+      CURRENT_TIMESTAMP()
+    ) AS ENDTIME,
+
+    CHIEFNAME,
+    RECIPESNR,
+    EXITP,
+    MARSHVY,
+    MARSHDTL,
+    PLANVOLUME,
+    PLANZAMVOL,
+    PLANZAM,
+    LIMZAMVOL,
+    STOPZAM,
+    SUMVOL,
+    ZAMNUM,
+    SMESITELI,
+    VARINTRPRZA,
+    VARVYSM,
+
+    COALESCE(
+      SAFE.TIMESTAMP_SECONDS(DIV(SAFE_CAST(SMPSYSTIME AS INT64), 1000000000)),
+      CURRENT_TIMESTAMP()
+    ) AS SMPSYSTIME,
+
+    ADDRESS,
+    NUMBERAUTO,
+    FIODRIVER,
+    RESERV1,
+    RECIPECODE,
+    NORMCURR,
+    DNORMCURR,
+    NTPREDVSM,
+    SENSVL,
+    DZMAX,
+    P_PLANVOL,
+    P_FACTVOL,
+    P_STATE,
+    FLAGCRREPORT,
+    AV_GUID1,
+    AV_GUID2,
+    AV_ZAK,
+    AV_NAME,
+    WNTM1,
+    WNTM2,
+    WNTM3,
+    WNTM4
+  FROM `galery-22579.gal_bsu_pp2.external_staging_bsu_pp2_job_title`
+),
+
+dedup AS (
+  SELECT
+    *, 
+    TO_HEX(SHA256(CAST(ORDERID AS STRING))) AS surrogate_key
+  FROM src
+)
+
+SELECT * FROM dedup
