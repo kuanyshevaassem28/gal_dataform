@@ -1,0 +1,311 @@
+config {
+  type: "incremental",
+  schema: "gal_bsu_pp2",
+  name: "history_bsu_pp2_job_title",
+  tags: ["bsu_pp2_job_title", "bsu_pp2", "job_title", "history", "scd2"],
+  description: "BSU PP2 Job Title — SCD-2 история по surrogate_key = SHA256(ORDERID) с hash_diff.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(incremental(), `
+
+WITH S AS (
+  SELECT *,
+    -- hash_diff по ВСЕМ значимым полям
+    TO_HEX(SHA256(CONCAT(
+      IFNULL(CAST(ORDERID AS STRING), ''),
+      IFNULL(CAST(ZAKAZNUM AS STRING), ''),
+      IFNULL(CAST(STATUS AS STRING), ''),
+      IFNULL(CAST(LINEID AS STRING), ''),
+      IFNULL(CAST(LINEFORCONT AS STRING), ''),
+      IFNULL(CAST(CONTNUM AS STRING), ''),
+      IFNULL(CAST(CREATEDATE AS STRING), ''),
+      IFNULL(CAST(ELTRECIPENUM AS STRING), ''),
+      IFNULL(RECIPEGROUP, ''),
+      IFNULL(RECIPENAME, ''),
+      IFNULL(CUSTOMERGROUP, ''),
+      IFNULL(PURPOSE, ''),
+      IFNULL(CAST(STARTTIME AS STRING), ''),
+      IFNULL(CAST(TIME1 AS STRING), ''),
+      IFNULL(CAST(TIME2 AS STRING), ''),
+      IFNULL(CAST(ENDTIME AS STRING), ''),
+      IFNULL(CHIEFNAME, ''),
+      IFNULL(CAST(RECIPESNR AS STRING), ''),
+      IFNULL(CAST(EXITP AS STRING), ''),
+      IFNULL(CAST(MARSHVY AS STRING), ''),
+      IFNULL(CAST(MARSHDTL AS STRING), ''),
+      IFNULL(CAST(PLANVOLUME AS STRING), ''),
+      IFNULL(CAST(PLANZAMVOL AS STRING), ''),
+      IFNULL(CAST(PLANZAM AS STRING), ''),
+      IFNULL(CAST(LIMZAMVOL AS STRING), ''),
+      IFNULL(CAST(STOPZAM AS STRING), ''),
+      IFNULL(CAST(SUMVOL AS STRING), ''),
+      IFNULL(CAST(ZAMNUM AS STRING), ''),
+      IFNULL(CAST(SMESITELI AS STRING), ''),
+      IFNULL(CAST(VARINTRPRZA AS STRING), ''),
+      IFNULL(CAST(VARVYSM AS STRING), ''),
+      IFNULL(CAST(SMPSYSTIME AS STRING), ''),
+      IFNULL(ADDRESS, ''),
+      IFNULL(NUMBERAUTO, ''),
+      IFNULL(FIODRIVER, ''),
+      IFNULL(CAST(RESERV1 AS STRING), ''),
+      IFNULL(CAST(RECIPECODE AS STRING), ''),
+      IFNULL(CAST(NORMCURR AS STRING), ''),
+      IFNULL(CAST(DNORMCURR AS STRING), ''),
+      IFNULL(CAST(NTPREDVSM AS STRING), ''),
+      IFNULL(CAST(SENSVL AS STRING), ''),
+      IFNULL(CAST(DZMAX AS STRING), ''),
+      IFNULL(CAST(P_PLANVOL AS STRING), ''),
+      IFNULL(CAST(P_FACTVOL AS STRING), ''),
+      IFNULL(CAST(P_STATE AS STRING), ''),
+      IFNULL(CAST(FLAGCRREPORT AS STRING), ''),
+      IFNULL(CAST(AV_GUID1 AS STRING), ''),
+      IFNULL(CAST(AV_GUID2 AS STRING), ''),
+      IFNULL(AV_ZAK, ''),
+      IFNULL(AV_NAME, ''),
+      IFNULL(CAST(WNTM1 AS STRING), ''),
+      IFNULL(CAST(WNTM2 AS STRING), ''),
+      IFNULL(CAST(WNTM3 AS STRING), ''),
+      IFNULL(CAST(WNTM4 AS STRING), '')
+    ))) AS hash_diff
+  FROM ${ref("staging_bsu_pp2_job_title")}
+),
+
+H_CUR AS (
+  SELECT *,
+    TO_HEX(SHA256(CONCAT(
+      IFNULL(CAST(ORDERID AS STRING), ''),
+      IFNULL(CAST(ZAKAZNUM AS STRING), ''),
+      IFNULL(CAST(STATUS AS STRING), ''),
+      IFNULL(CAST(LINEID AS STRING), ''),
+      IFNULL(CAST(LINEFORCONT AS STRING), ''),
+      IFNULL(CAST(CONTNUM AS STRING), ''),
+      IFNULL(CAST(CREATEDATE AS STRING), ''),
+      IFNULL(CAST(ELTRECIPENUM AS STRING), ''),
+      IFNULL(RECIPEGROUP, ''),
+      IFNULL(RECIPENAME, ''),
+      IFNULL(CUSTOMERGROUP, ''),
+      IFNULL(PURPOSE, ''),
+      IFNULL(CAST(STARTTIME AS STRING), ''),
+      IFNULL(CAST(TIME1 AS STRING), ''),
+      IFNULL(CAST(TIME2 AS STRING), ''),
+      IFNULL(CAST(ENDTIME AS STRING), ''),
+      IFNULL(CHIEFNAME, ''),
+      IFNULL(CAST(RECIPESNR AS STRING), ''),
+      IFNULL(CAST(EXITP AS STRING), ''),
+      IFNULL(CAST(MARSHVY AS STRING), ''),
+      IFNULL(CAST(MARSHDTL AS STRING), ''),
+      IFNULL(CAST(PLANVOLUME AS STRING), ''),
+      IFNULL(CAST(PLANZAMVOL AS STRING), ''),
+      IFNULL(CAST(PLANZAM AS STRING), ''),
+      IFNULL(CAST(LIMZAMVOL AS STRING), ''),
+      IFNULL(CAST(STOPZAM AS STRING), ''),
+      IFNULL(CAST(SUMVOL AS STRING), ''),
+      IFNULL(CAST(ZAMNUM AS STRING), ''),
+      IFNULL(CAST(SMESITELI AS STRING), ''),
+      IFNULL(CAST(VARINTRPRZA AS STRING), ''),
+      IFNULL(CAST(VARVYSM AS STRING), ''),
+      IFNULL(CAST(SMPSYSTIME AS STRING), ''),
+      IFNULL(ADDRESS, ''),
+      IFNULL(NUMBERAUTO, ''),
+      IFNULL(FIODRIVER, ''),
+      IFNULL(CAST(RESERV1 AS STRING), ''),
+      IFNULL(CAST(RECIPECODE AS STRING), ''),
+      IFNULL(CAST(NORMCURR AS STRING), ''),
+      IFNULL(CAST(DNORMCURR AS STRING), ''),
+      IFNULL(CAST(NTPREDVSM AS STRING), ''),
+      IFNULL(CAST(SENSVL AS STRING), ''),
+      IFNULL(CAST(DZMAX AS STRING), ''),
+      IFNULL(CAST(P_PLANVOL AS STRING), ''),
+      IFNULL(CAST(P_FACTVOL AS STRING), ''),
+      IFNULL(CAST(P_STATE AS STRING), ''),
+      IFNULL(CAST(FLAGCRREPORT AS STRING), ''),
+      IFNULL(CAST(AV_GUID1 AS STRING), ''),
+      IFNULL(CAST(AV_GUID2 AS STRING), ''),
+      IFNULL(AV_ZAK, ''),
+      IFNULL(AV_NAME, ''),
+      IFNULL(CAST(WNTM1 AS STRING), ''),
+      IFNULL(CAST(WNTM2 AS STRING), ''),
+      IFNULL(CAST(WNTM3 AS STRING), ''),
+      IFNULL(CAST(WNTM4 AS STRING), '')
+    ))) AS hash_diff
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+-- 🔥 новые ИЛИ реально изменённые
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+  WHERE h.surrogate_key IS NULL
+     OR s.hash_diff != h.hash_diff
+),
+
+-- 🔥 только изменённые → закрываем
+CHANGED_KEYS AS (
+  SELECT h.surrogate_key, h.valid_from
+  FROM H_CUR h
+  JOIN S s
+    ON s.surrogate_key = h.surrogate_key
+  WHERE s.hash_diff != h.hash_diff
+)
+
+-- ✅ вставка новых версий
+SELECT
+  n.ORDERID,
+  n.ZAKAZNUM,
+  n.STATUS,
+  n.LINEID,
+  n.LINEFORCONT,
+  n.CONTNUM,
+  n.CREATEDATE,
+  n.ELTRECIPENUM,
+  n.RECIPEGROUP,
+  n.RECIPENAME,
+  n.CUSTOMERGROUP,
+  n.PURPOSE,
+  n.STARTTIME,
+  n.TIME1,
+  n.TIME2,
+  n.ENDTIME,
+  n.CHIEFNAME,
+  n.RECIPESNR,
+  n.EXITP,
+  n.MARSHVY,
+  n.MARSHDTL,
+  n.PLANVOLUME,
+  n.PLANZAMVOL,
+  n.PLANZAM,
+  n.LIMZAMVOL,
+  n.STOPZAM,
+  n.SUMVOL,
+  n.ZAMNUM,
+  n.SMESITELI,
+  n.VARINTRPRZA,
+  n.VARVYSM,
+  n.SMPSYSTIME,
+  n.ADDRESS,
+  n.NUMBERAUTO,
+  n.FIODRIVER,
+  n.RESERV1,
+  n.RECIPECODE,
+  n.NORMCURR,
+  n.DNORMCURR,
+  n.NTPREDVSM,
+  n.SENSVL,
+  n.DZMAX,
+  n.P_PLANVOL,
+  n.P_FACTVOL,
+  n.P_STATE,
+  n.FLAGCRREPORT,
+  n.AV_GUID1,
+  n.AV_GUID2,
+  n.AV_ZAK,
+  n.AV_NAME,
+  n.WNTM1,
+  n.WNTM2,
+  n.WNTM3,
+  n.WNTM4,
+  n.surrogate_key,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+-- ✅ закрытие старых
+SELECT
+  h.ORDERID,
+  h.ZAKAZNUM,
+  h.STATUS,
+  h.LINEID,
+  h.LINEFORCONT,
+  h.CONTNUM,
+  h.CREATEDATE,
+  h.ELTRECIPENUM,
+  h.RECIPEGROUP,
+  h.RECIPENAME,
+  h.CUSTOMERGROUP,
+  h.PURPOSE,
+  h.STARTTIME,
+  h.TIME1,
+  h.TIME2,
+  h.ENDTIME,
+  h.CHIEFNAME,
+  h.RECIPESNR,
+  h.EXITP,
+  h.MARSHVY,
+  h.MARSHDTL,
+  h.PLANVOLUME,
+  h.PLANZAMVOL,
+  h.PLANZAM,
+  h.LIMZAMVOL,
+  h.STOPZAM,
+  h.SUMVOL,
+  h.ZAMNUM,
+  h.SMESITELI,
+  h.VARINTRPRZA,
+  h.VARVYSM,
+  h.SMPSYSTIME,
+  h.ADDRESS,
+  h.NUMBERAUTO,
+  h.FIODRIVER,
+  h.RESERV1,
+  h.RECIPECODE,
+  h.NORMCURR,
+  h.DNORMCURR,
+  h.NTPREDVSM,
+  h.SENSVL,
+  h.DZMAX,
+  h.P_PLANVOL,
+  h.P_FACTVOL,
+  h.P_STATE,
+  h.FLAGCRREPORT,
+  h.AV_GUID1,
+  h.AV_GUID2,
+  h.AV_ZAK,
+  h.AV_NAME,
+  h.WNTM1,
+  h.WNTM2,
+  h.WNTM3,
+  h.WNTM4,
+  h.surrogate_key,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to
+
+FROM H_CUR h
+JOIN CHANGED_KEYS k
+  ON h.surrogate_key = k.surrogate_key
+ AND h.valid_from = k.valid_from
+
+`, `
+
+-- 🔹 первый запуск (full refresh)
+
+WITH S AS (
+  SELECT *
+  FROM ${ref("staging_bsu_pp2_job_title")}
+),
+
+DEDUP AS (
+  SELECT s.*
+  FROM S s
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY surrogate_key
+    ORDER BY CREATEDATE DESC, STARTTIME DESC
+  ) = 1
+)
+
+SELECT
+  d.*,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM DEDUP d
+
+`)}
