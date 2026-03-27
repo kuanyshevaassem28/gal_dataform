@@ -1,0 +1,124 @@
+config {
+  type: "incremental",
+  schema: "gal_bitrix24",
+  name: "history_bitrix24_deal_category_list",
+  tags: ["bitrix24_deal_category_list", "bitrix24", "deal_category_list", "history", "scd2"],
+  description: "SCD-2 история категорий сделок Bitrix24 по surrogate_key = SHA256(ID) с is_current/valid_from/valid_to.",
+  columns: {
+    ID:               "Уникальный ID категории сделки (из Bitrix24)",
+    CREATED_DATE:     "Дата создания категории",
+    NAME:             "Название категории сделки",
+    SORT:             "Порядок сортировки категории",
+    IS_LOCKED:        "Признак: категория заблокирована в Bitrix24",
+    is_current:       "Флаг текущей версии в SCD2 истории (TRUE — актуальная запись)",
+    valid_from:       "Дата и время начала актуальности версии записи",
+    valid_to:         "Дата и время окончания актуальности версии записи (NULL — активна сейчас)",
+    surrogate_key:    "SCD2 суррогатный ключ: SHA256(ID)"
+  },
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+
+${when(incremental(), `
+
+WITH
+
+S AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key
+  FROM ${ref("external_staging_bitrix24_deal_category_list")} s
+),
+
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+DIFF AS (
+  SELECT
+    s.*,
+    h.valid_from AS h_valid_from,
+
+    h.surrogate_key IS NULL AS is_new,
+
+    (
+      h.surrogate_key IS NOT NULL AND (
+           h.CREATED_DATE IS DISTINCT FROM s.CREATED_DATE
+        OR h.NAME         IS DISTINCT FROM s.NAME
+        OR h.SORT         IS DISTINCT FROM s.SORT
+        OR h.IS_LOCKED    IS DISTINCT FROM s.IS_LOCKED
+      )
+    ) AS is_changed
+
+  FROM S s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+),
+
+TO_CLOSE AS (
+  SELECT h.*
+  FROM H_CUR h
+  JOIN DIFF d
+    ON d.surrogate_key = h.surrogate_key
+  WHERE d.is_changed = TRUE
+),
+
+TO_INSERT AS (
+  SELECT *
+  FROM DIFF
+  WHERE is_new = TRUE OR is_changed = TRUE
+)
+
+SELECT
+  i.ID,
+  i.CREATED_DATE,
+  i.NAME,
+  i.SORT,
+  i.IS_LOCKED,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  i.surrogate_key
+
+FROM TO_INSERT i
+
+UNION ALL
+
+SELECT
+  h.ID,
+  h.CREATED_DATE,
+  h.NAME,
+  h.SORT,
+  h.IS_LOCKED,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to,
+  h.surrogate_key
+
+FROM TO_CLOSE h
+
+`, `
+
+WITH S AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key
+  FROM ${ref("external_staging_bitrix24_deal_category_list")} s
+)
+
+SELECT
+  s.ID,
+  s.CREATED_DATE,
+  s.NAME,
+  s.SORT,
+  s.IS_LOCKED,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  s.surrogate_key
+
+FROM S s
+
+`)}
