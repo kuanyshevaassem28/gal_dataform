@@ -1,0 +1,118 @@
+config {
+  type: "operations",
+  schema: "gal_bitrix24",
+  name: "history_bitrix24_leads",
+  tags: ["bitrix24_leads","bitrix24","leads","history","scd2"],
+  description: "SCD2 история лидов Bitrix24. surrogate_key = SHA256(ID). Телефоны нормализуются."
+}
+
+BEGIN
+
+-- ============================================================
+-- 1. STAGING (твой pipeline без изменений)
+-- ============================================================
+
+CREATE TEMP TABLE stg AS
+
+WITH S_SRC AS (
+  SELECT *
+  FROM ${ref("external_staging_bitrix24_leads")}
+),
+
+base AS (
+  SELECT
+    s.*,
+    NULLIF(
+      REGEXP_EXTRACT(
+        TO_JSON_STRING(s.PHONE),
+        r'(\\+?\\d[\\d\\-\\(\\)\\s]{6,}\\d)'
+      ),''
+    ) AS phone_value_raw
+  FROM S_SRC s
+),
+
+normalized AS (
+  SELECT
+    b.*,
+    REGEXP_REPLACE(phone_value_raw,r'\\D','') AS phone_digits
+  FROM base b
+),
+
+picked AS (
+  SELECT
+    n.*,
+    CASE
+      WHEN phone_digits IS NULL THEN NULL
+      WHEN LENGTH(phone_digits)=10 THEN CONCAT('+7',phone_digits)
+      WHEN LENGTH(phone_digits)=11 AND STARTS_WITH(phone_digits,'8')
+        THEN CONCAT('+7',SUBSTR(phone_digits,2))
+      WHEN LENGTH(phone_digits)=11 AND STARTS_WITH(phone_digits,'7')
+        THEN CONCAT('+',phone_digits)
+      ELSE NULL
+    END AS PHONE_E164
+  FROM normalized n
+),
+
+stg_final AS (
+SELECT
+
+  SAFE_CAST(ID AS STRING) ID,
+  SAFE_CAST(TITLE AS STRING) TITLE,
+  SAFE_CAST(NAME AS STRING) NAME,
+  SAFE_CAST(STATUS_ID AS STRING) STATUS_ID,
+  SAFE_CAST(OPPORTUNITY AS STRING) OPPORTUNITY,
+  SAFE_CAST(DATE_MODIFY AS STRING) DATE_MODIFY,
+
+  PHONE_E164 AS PHONE,
+  phone_value_raw AS PHONE_RAW,
+  PHONE_E164 AS PHONE_E164,
+  IF(PHONE_E164 IS NULL,[],[PHONE_E164]) AS PHONE_VALUES_E164,
+  PHONE_E164 AS PHONE_VALUES_E164_KEY,
+
+  TO_HEX(SHA256(COALESCE(SAFE_CAST(ID AS STRING),''))) AS surrogate_key
+
+FROM picked
+)
+
+SELECT * FROM stg_final;
+
+-- ============================================================
+-- 2. MERGE (SCD2)
+-- ============================================================
+
+MERGE `galery-22579.gal_bitrix24.history_bitrix24_leads` AS history
+USING stg AS staging
+ON history.surrogate_key = staging.surrogate_key
+AND history.is_current = TRUE
+
+-- 🔴 Закрываем старые версии
+WHEN MATCHED AND (
+     history.TITLE IS DISTINCT FROM staging.TITLE
+  OR history.NAME IS DISTINCT FROM staging.NAME
+  OR history.STATUS_ID IS DISTINCT FROM staging.STATUS_ID
+  OR history.OPPORTUNITY IS DISTINCT FROM staging.OPPORTUNITY
+  OR history.DATE_MODIFY IS DISTINCT FROM staging.DATE_MODIFY
+  OR history.PHONE_E164 IS DISTINCT FROM staging.PHONE_E164
+)
+THEN UPDATE SET
+  is_current = FALSE,
+  valid_to = CURRENT_DATETIME('Asia/Almaty')
+
+-- 🟢 Вставляем новые (и новые, и изменённые)
+WHEN NOT MATCHED THEN
+INSERT (
+  ID, TITLE, NAME, STATUS_ID, OPPORTUNITY, DATE_MODIFY,
+  PHONE, PHONE_RAW, PHONE_E164, PHONE_VALUES_E164, PHONE_VALUES_E164_KEY,
+  surrogate_key,
+  is_current, valid_from, valid_to
+)
+VALUES (
+  staging.ID, staging.TITLE, staging.NAME, staging.STATUS_ID,
+  staging.OPPORTUNITY, staging.DATE_MODIFY,
+  staging.PHONE, staging.PHONE_RAW, staging.PHONE_E164,
+  staging.PHONE_VALUES_E164, staging.PHONE_VALUES_E164_KEY,
+  staging.surrogate_key,
+  TRUE, CURRENT_DATETIME('Asia/Almaty'), NULL
+);
+
+END;
