@@ -1,0 +1,172 @@
+config {
+  type: "operations",
+  schema: "gal_wialon",
+  name: "history_wialon_unit_group_stays",
+  hasOutput: true,
+  tags: ["wialon_unit_group_stays", "wialon", "unit_group_stays", "history", "scd2"],
+  description: "Wialon Unit Group Stays — SCD-2 история, surrogate_key = name|date.",
+  columns: {
+    number:        "Номер строки отчёта",
+    date:          "Дата отчёта",
+    name:          "Название группы",
+    start_time:    "Начало пребывания",
+    end_time:      "Окончание пребывания",
+    duration_sec:  "Длительность, сек",
+    position:      "Позиция",
+    count:         "Количество",
+    surrogate_key: "Business key",
+    is_current:    "Флаг текущей версии",
+    valid_from:    "Начало версии",
+    valid_to:      "Конец версии"
+  }
+}
+
+DECLARE run_dt DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty");
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  number INT64,
+  date STRING,
+  name STRING,
+  start_time STRING,
+  end_time STRING,
+  duration_sec INT64,
+  position STRING,
+  count INT64,
+  surrogate_key STRING,
+  is_current BOOL,
+  valid_from DATETIME,
+  valid_to DATETIME
+);
+
+MERGE ${self()} t
+USING (
+
+  WITH s AS (
+    SELECT
+      number,
+      date,
+      name,
+      start_time,
+      end_time,
+      duration_sec,
+      position,
+      count,
+
+      -- 🔑 business key
+      TO_HEX(SHA256(CONCAT(
+        COALESCE(name, ''), '|',
+        COALESCE(CAST(date AS STRING), '')
+    ))) AS surrogate_key
+
+    FROM ${ref("staging_wialon_unit_group_stays")}
+  ),
+
+  h_cur AS (
+    SELECT *
+    FROM ${self()}
+    WHERE is_current = TRUE
+  ),
+
+  diff AS (
+    SELECT
+      s.*,
+      h_cur.valid_from AS old_valid_from,
+
+      (h_cur.surrogate_key IS NULL) AS is_new,
+
+      (
+        h_cur.surrogate_key IS NOT NULL AND (
+             s.end_time     IS DISTINCT FROM h_cur.end_time
+          OR s.duration_sec IS DISTINCT FROM h_cur.duration_sec
+          OR s.position     IS DISTINCT FROM h_cur.position
+          OR s.count        IS DISTINCT FROM h_cur.count
+        )
+      ) AS is_changed
+
+    FROM s
+    LEFT JOIN h_cur
+      ON s.surrogate_key = h_cur.surrogate_key
+  ),
+
+  rows_to_merge AS (
+
+    -- 🔴 Закрываем старую версию
+    SELECT
+      surrogate_key,
+      old_valid_from AS valid_from,
+      run_dt AS valid_to,
+      FALSE AS is_current,
+      NULL AS number,
+      NULL AS date,
+      NULL AS name,
+      NULL AS start_time,
+      NULL AS end_time,
+      NULL AS duration_sec,
+      NULL AS position,
+      NULL AS count,
+      'U' AS op
+    FROM diff
+    WHERE is_changed = TRUE
+
+    UNION ALL
+
+    -- 🟢 Вставляем новую версию
+    SELECT
+      surrogate_key,
+      run_dt AS valid_from,
+      NULL AS valid_to,
+      TRUE AS is_current,
+      number,
+      date,
+      name,
+      start_time,
+      end_time,
+      duration_sec,
+      position,
+      count,
+      'I' AS op
+    FROM diff
+    WHERE is_new = TRUE OR is_changed = TRUE
+  )
+
+  SELECT * FROM rows_to_merge
+
+) s
+
+ON t.surrogate_key = s.surrogate_key
+AND t.valid_from   = s.valid_from
+
+WHEN MATCHED AND s.op = 'U' THEN
+  UPDATE SET
+    is_current = FALSE,
+    valid_to   = s.valid_to
+
+WHEN NOT MATCHED AND s.op = 'I' THEN
+  INSERT (
+    number,
+    date,
+    name,
+    start_time,
+    end_time,
+    duration_sec,
+    position,
+    count,
+    surrogate_key,
+    is_current,
+    valid_from,
+    valid_to
+  )
+  VALUES (
+    s.number,
+    s.date,
+    s.name,
+    s.start_time,
+    s.end_time,
+    s.duration_sec,
+    s.position,
+    s.count,
+    s.surrogate_key,
+    TRUE,
+    s.valid_from,
+    NULL
+  );
