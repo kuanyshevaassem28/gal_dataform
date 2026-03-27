@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "facebook_ads_data",
+  name: "external_staging_facebook_ads_data"
+}
