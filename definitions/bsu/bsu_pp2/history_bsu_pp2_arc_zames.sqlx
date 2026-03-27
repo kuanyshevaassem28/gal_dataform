@@ -1,0 +1,172 @@
+config {
+  type: "incremental",
+  schema: "gal_bsu_pp2",
+  name: "history_bsu_pp2_arc_zames",
+  tags: ["bsu_pp2_arc_zames", "bsu_pp2", "arc_zames", "history", "scd2"],
+  description: "BSU PP2 ARC_ZAMES — SCD-2 история по surrogate_key = SHA256(ID) с is_current/valid_from/valid_to.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+} 
+
+${when(incremental(), `
+
+WITH S AS (
+  SELECT *,
+    TO_HEX(SHA256(CONCAT(
+      IFNULL(CAST(ZAKASID AS STRING), ''),
+      IFNULL(CAST(ZAMNUM AS STRING), ''),
+      IFNULL(CAST(ZAMVOL AS STRING), ''),
+      IFNULL(CAST(ZAMHUMID AS STRING), ''),
+      IFNULL(CAST(ZAMHUMEND AS STRING), ''),
+      IFNULL(CAST(ZAMTEMP AS STRING), ''),
+      IFNULL(CAST(ZAMSTARTTIME AS STRING), ''),
+      IFNULL(CAST(ZAMSTUNLTIME AS STRING), ''),
+      IFNULL(CAST(ZAMENDTIME AS STRING), ''),
+      IFNULL(ZAMCHIEFNAME, ''),
+      IFNULL(CAST(ZAMSTATUS AS STRING), ''),
+      IFNULL(CAST(ZAMVYT1 AS STRING), ''),
+      IFNULL(CAST(ZAMVYT2 AS STRING), ''),
+      IFNULL(CAST(ZAMVYT3 AS STRING), ''),
+      IFNULL(CAST(ZAMVYT4 AS STRING), ''),
+      IFNULL(CAST(ZAMWZ AS STRING), '')
+    ))) AS hash_diff
+  FROM ${ref("staging_bsu_pp2_arc_zames")}
+),
+
+H_CUR AS (
+  SELECT *,
+    TO_HEX(SHA256(CONCAT(
+      IFNULL(CAST(ZAKASID AS STRING), ''),
+      IFNULL(CAST(ZAMNUM AS STRING), ''),
+      IFNULL(CAST(ZAMVOL AS STRING), ''),
+      IFNULL(CAST(ZAMHUMID AS STRING), ''),
+      IFNULL(CAST(ZAMHUMEND AS STRING), ''),
+      IFNULL(CAST(ZAMTEMP AS STRING), ''),
+      IFNULL(CAST(ZAMSTARTTIME AS STRING), ''),
+      IFNULL(CAST(ZAMSTUNLTIME AS STRING), ''),
+      IFNULL(CAST(ZAMENDTIME AS STRING), ''),
+      IFNULL(ZAMCHIEFNAME, ''),
+      IFNULL(CAST(ZAMSTATUS AS STRING), ''),
+      IFNULL(CAST(ZAMVYT1 AS STRING), ''),
+      IFNULL(CAST(ZAMVYT2 AS STRING), ''),
+      IFNULL(CAST(ZAMVYT3 AS STRING), ''),
+      IFNULL(CAST(ZAMVYT4 AS STRING), ''),
+      IFNULL(CAST(ZAMWZ AS STRING), '')
+    ))) AS hash_diff
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+-- ✅ только реально изменённые или новые
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+  WHERE h.surrogate_key IS NULL
+     OR s.hash_diff != h.hash_diff
+),
+
+-- ✅ закрываем только изменённые
+CHANGED_KEYS AS (
+  SELECT h.surrogate_key, h.valid_from
+  FROM H_CUR h
+  JOIN S s
+    ON s.surrogate_key = h.surrogate_key
+  WHERE s.hash_diff != h.hash_diff
+)
+
+-- 🔹 вставка новых версий
+SELECT
+  n.ID,
+  n.ZAKASID,
+  n.ZAMNUM,
+  n.ZAMVOL,
+  n.ZAMHUMID,
+  n.ZAMHUMEND,
+  n.ZAMTEMP,
+  n.ZAMSTARTTIME,
+  n.ZAMSTUNLTIME,
+  n.ZAMENDTIME,
+  n.ZAMCHIEFNAME,
+  n.ZAMSTATUS,
+  n.ZAMVYT1,
+  n.ZAMVYT2,
+  n.ZAMVYT3,
+  n.ZAMVYT4,
+  n.ZAMWZ,
+  n.surrogate_key,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+-- 🔹 закрытие старых
+SELECT
+  h.ID,
+  h.ZAKASID,
+  h.ZAMNUM,
+  h.ZAMVOL,
+  h.ZAMHUMID,
+  h.ZAMHUMEND,
+  h.ZAMTEMP,
+  h.ZAMSTARTTIME,
+  h.ZAMSTUNLTIME,
+  h.ZAMENDTIME,
+  h.ZAMCHIEFNAME,
+  h.ZAMSTATUS,
+  h.ZAMVYT1,
+  h.ZAMVYT2,
+  h.ZAMVYT3,
+  h.ZAMVYT4,
+  h.ZAMWZ,
+  h.surrogate_key,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON h.surrogate_key = k.surrogate_key
+ AND h.valid_from = k.valid_from
+
+`, `
+
+
+WITH S AS (
+  SELECT *
+  FROM ${ref("staging_bsu_pp2_arc_zames")}
+),
+DEDUP AS (
+  SELECT s.*
+  FROM S s
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY surrogate_key
+    ORDER BY ZAMENDTIME DESC NULLS LAST, ZAMSTARTTIME DESC NULLS LAST
+  ) = 1
+)
+
+SELECT
+  d.ID,
+  d.ZAKASID,
+  d.ZAMNUM,
+  d.ZAMVOL,
+  d.ZAMHUMID,
+  d.ZAMHUMEND,
+  d.ZAMTEMP,
+  d.ZAMSTARTTIME,
+  d.ZAMSTUNLTIME,
+  d.ZAMENDTIME,
+  d.ZAMCHIEFNAME,
+  d.ZAMSTATUS,
+  d.ZAMVYT1,
+  d.ZAMVYT2,
+  d.ZAMVYT3,
+  d.ZAMVYT4,
+  d.ZAMWZ,
+  d.surrogate_key,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM DEDUP d
+`)}
