@@ -1,0 +1,15 @@
+-- Приведение типов с безопасным CAST
+DECLARE local_tz STRING DEFAULT "${vars.local_tz}";
+
+CREATE TEMP FUNCTION _to_str(x ANY TYPE) AS (COALESCE(CAST(x AS STRING), ""));
+CREATE TEMP FUNCTION _to_num(x STRING) AS (SAFE.CAST(x AS NUMERIC));
+CREATE TEMP FUNCTION _to_float(x STRING) AS (SAFE.CAST(x AS FLOAT64));
+CREATE TEMP FUNCTION _to_int(x STRING) AS (SAFE.CAST(x AS INT64));
+
+-- Универсальный конкат для surrogate_key / hash_diff:
+CREATE TEMP FUNCTION _cat(arr ARRAY<STRING>) AS (
+  ARRAY_TO_STRING(
+    (SELECT ARRAY(SELECT COALESCE(TRIM(x), "") FROM UNNEST(arr))),
+    '|'
+  )
+);
