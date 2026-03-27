@@ -1,0 +1,61 @@
+config {
+  type: "incremental",
+  schema: "gal_acs",
+  name: "history_acs_entry_exit_pp3",
+  tags: ["acs_entry_exit_pp3", "entry_exit_pp3", "acs", "pp3", "entry_exit", "history", "scd2"],
+  description: "ACS pp3 — SCD2 история (устойчиво к повторам), с принудительным закрытием текущих версий по ключам из staging.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+  columns: {
+    employee_name: "ФИО сотрудника",
+    company: "Компания",
+    department: "Подразделение",
+    event_date: "Дата события (DATE)",
+    event_time: "Время события (TIME)",
+    event_type: "Тип события",
+    access_zone: "Зона доступа",
+    door: "Дверь/турникет",
+    key_code: "Код ключа/карты",
+    valid_from: "Время начала версии (Asia/Almaty)",
+    valid_to: "Время окончания версии (Asia/Almaty)",
+    is_current: "Текущая версия",
+    surrogate_key: "Хэш всех полей"
+  },
+bigquery: {
+    partitionBy: "event_date"
+  }
+}
+
+pre_operations {
+  ${when(incremental(), `
+    UPDATE ${self()}
+    SET
+      valid_to = CURRENT_TIMESTAMP(),
+      is_current = FALSE
+    WHERE is_current = TRUE
+      AND surrogate_key IN (SELECT surrogate_key FROM ${ref("staging_acs_entry_exit_pp3")})
+  `)}
+}
+
+SELECT
+  s.employee_name,
+  s.company,
+  s.department,
+  s.event_date,
+  s.event_time,
+  s.event_type,
+  s.access_zone,
+  s.door,
+  s.key_code,
+  CURRENT_TIMESTAMP() AS valid_from,
+  CAST(NULL AS TIMESTAMP) AS valid_to,
+  TRUE AS is_current,
+  s.surrogate_key
+FROM ${ref("staging_acs_entry_exit_pp3")} s
+ 
+${when(incremental(), `
+  WHERE NOT EXISTS (
+    SELECT 1 FROM ${self()} h 
+    WHERE h.surrogate_key = s.surrogate_key 
+    AND h.is_current = TRUE
+  )
+`)}
