@@ -1,0 +1,229 @@
+config {
+  type: "table",
+  schema: "gal_unf",
+  name: "crm_venn_segments_marts",
+  tags: ["bitrix24_contacts", "unf_customers_data_contracts", "unf_customers_data_customer", "bitrix24_deals", "bitrix24_leads", "unf_orders", "crm", "venn", "segments", "bitrix24", "unf", "marts"],
+  description: "Сегментация по телефону (E.164): наличие Lead/Deal/Order и агрегаты сумм/количеств + сегменты (ideal_cycle, failed_deals, sales_without_deal и т.д.).",
+  columns: {
+    document_number: "Номер документа заказа (UNF). Может быть NULL, если у телефона нет заказов.",
+    phone_e164: "Телефон в формате E.164 (+7...). Ключ сегментации.",
+    has_lead: "Флаг наличия лида по телефону (1/0).",
+    has_deal: "Флаг наличия сделки по телефону (1/0).",
+    has_order: "Флаг наличия заказа по телефону (1/0).",
+    leads_cnt: "Количество уникальных лидов по телефону.",
+    deals_cnt: "Количество уникальных сделок по телефону.",
+    orders_cnt: "Количество уникальных заказов по телефону.",
+    leads_sum: "Сумма лидов (opportunity) по телефону.",
+    deals_sum: "Сумма сделок (opportunity) по телефону.",
+    orders_sum: "Сумма заказов (sum) по телефону.",
+    segment: "Сегмент (англ. код): ideal_cycle / failed_deals / sales_without_deal / unknown_source / leads_only / deals_only / orders_only / unknown.",
+    segment_ru: "Сегмент на русском языке.",
+    segment_label: "Короткая метка сегмента (Lead + Deal + Order и т.п.)."
+  }
+}
+
+WITH
+
+phones_from_bitrix AS (
+  SELECT DISTINCT
+    CAST(id AS STRING) AS contact_id,
+    phone AS phone_e164
+  FROM `galery-22579.gal_bitrix24_marts.contacts_bitrix24_marts`,
+  UNNEST(phone_values_e164) AS phone
+  WHERE NULLIF(TRIM(phone), '') IS NOT NULL
+),
+
+phones_from_unf_customer AS (
+  SELECT DISTINCT
+    phone AS phone_e164
+  FROM `galery-22579.gal_unf_marts.customers_data_customer_unf_marts`,
+  UNNEST(phone_values_e164) AS phone
+  WHERE NULLIF(TRIM(phone), '') IS NOT NULL
+),
+
+phones_from_unf_contracts AS (
+  SELECT DISTINCT
+    phone AS phone_e164
+  FROM `galery-22579.gal_unf_marts.customers_data_contracts_unf_marts`,
+  UNNEST(phone_values_e164) AS phone
+  WHERE NULLIF(TRIM(phone), '') IS NOT NULL
+),
+
+/* индекс телефонов контакта Bitrix (если есть contact_id) */
+contact_phone_index AS (
+  SELECT
+    contact_id,
+    ARRAY_AGG(DISTINCT phone_e164 IGNORE NULLS) AS phones_e164
+  FROM phones_from_bitrix
+  GROUP BY contact_id
+),
+
+all_known_phones AS (
+  SELECT phone_e164 FROM phones_from_bitrix
+  UNION DISTINCT
+  SELECT phone_e164 FROM phones_from_unf_customer
+  UNION DISTINCT
+  SELECT phone_e164 FROM phones_from_unf_contracts
+),
+
+/* ------------------------------
+   2) Лиды -> телефоны (через contact_id)
+--------------------------------*/
+leads_expanded AS (
+  SELECT
+    CAST(l.id AS STRING) AS lead_id,
+    SAFE_CAST(l.opportunity AS FLOAT64) AS lead_sum,
+    CAST(l.contact_id AS STRING) AS contact_id,
+    ph AS phone_e164
+  FROM `galery-22579.gal_bitrix24_marts.leads_mart` l
+  LEFT JOIN contact_phone_index ci
+    ON CAST(l.contact_id AS STRING) = ci.contact_id
+  LEFT JOIN UNNEST(ci.phones_e164) AS ph
+  WHERE NULLIF(TRIM(ph), '') IS NOT NULL
+),
+
+/* ------------------------------
+   3) Сделки -> телефоны
+--------------------------------*/
+deals_expanded AS (
+  -- часть A: через contact_id
+  SELECT
+    CAST(d.deal_id AS STRING) AS deal_id,
+    SAFE_CAST(d.opportunity AS FLOAT64) AS deal_sum,
+    CAST(d.lead_id AS STRING) AS lead_id,
+    CAST(d.contact_id AS STRING) AS contact_id,
+    ph AS phone_e164
+  FROM `galery-22579.gal_bitrix24_marts.deals_mart` d
+  LEFT JOIN contact_phone_index ci
+    ON CAST(d.contact_id AS STRING) = ci.contact_id
+  LEFT JOIN UNNEST(ci.phones_e164) AS ph
+  WHERE NULLIF(TRIM(ph), '') IS NOT NULL
+
+  UNION ALL
+
+  -- часть B: через lead_id (lead->phone)
+  SELECT
+    CAST(d.deal_id AS STRING) AS deal_id,
+    SAFE_CAST(d.opportunity AS FLOAT64) AS deal_sum,
+    CAST(d.lead_id AS STRING) AS lead_id,
+    CAST(d.contact_id AS STRING) AS contact_id,
+    l.phone_e164
+  FROM `galery-22579.gal_bitrix24_marts.deals_mart` d
+  JOIN leads_expanded l
+    ON CAST(d.lead_id AS STRING) = l.lead_id
+  WHERE NULLIF(TRIM(l.phone_e164), '') IS NOT NULL
+),
+
+/* ------------------------------
+   4) Заказы UNF -> телефоны (из массива)
+--------------------------------*/
+orders_expanded AS (
+  SELECT
+    o.document_number,
+    CAST(o.document_id AS STRING) AS document_id,
+    SAFE_CAST(o.sum AS FLOAT64) AS order_sum,
+    ph AS phone_e164
+  FROM `galery-22579.gal_unf_marts.orders_unf_marts` o,
+  UNNEST(o.phone_values) AS ph
+  WHERE NULLIF(TRIM(ph), '') IS NOT NULL
+    AND DATE(o.date) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'
+),
+
+/* ------------------------------
+   5) Флаги наличия по телефону
+--------------------------------*/
+presence_by_phone AS (
+  SELECT
+    phone_e164,
+    MAX(has_lead)  AS has_lead,
+    MAX(has_deal)  AS has_deal,
+    MAX(has_order) AS has_order
+  FROM (
+    SELECT phone_e164, 1 AS has_lead, 0 AS has_deal, 0 AS has_order FROM leads_expanded
+    UNION ALL
+    SELECT phone_e164, 0, 1, 0 FROM deals_expanded
+    UNION ALL
+    SELECT phone_e164, 0, 0, 1 FROM orders_expanded
+  )
+  GROUP BY phone_e164
+),
+
+/* ------------------------------
+   6) Агрегаты по телефону
+--------------------------------*/
+agg_by_phone AS (
+  SELECT
+    p.phone_e164,
+
+    COUNT(DISTINCT l.lead_id) AS leads_cnt,
+    SUM(COALESCE(l.lead_sum, 0)) AS leads_sum,
+
+    COUNT(DISTINCT d.deal_id) AS deals_cnt,
+    SUM(COALESCE(d.deal_sum, 0)) AS deals_sum,
+
+    COUNT(DISTINCT o.document_id) AS orders_cnt,
+    SUM(COALESCE(o.order_sum, 0)) AS orders_sum
+
+  FROM presence_by_phone p
+  LEFT JOIN leads_expanded l
+    ON l.phone_e164 = p.phone_e164
+  LEFT JOIN deals_expanded d
+    ON d.phone_e164 = p.phone_e164
+  LEFT JOIN orders_expanded o
+    ON o.phone_e164 = p.phone_e164
+  GROUP BY p.phone_e164
+)
+
+SELECT
+  o.document_number,
+  a.phone_e164,
+  pr.has_lead,
+  pr.has_deal,
+  pr.has_order,
+
+  a.leads_cnt,
+  a.deals_cnt,
+  a.orders_cnt,
+
+  a.leads_sum,
+  a.deals_sum,
+  a.orders_sum,
+
+  CASE
+    WHEN pr.has_lead=1 AND pr.has_deal=1 AND pr.has_order=1 THEN 'ideal_cycle'
+    WHEN pr.has_lead=1 AND pr.has_deal=1 AND pr.has_order=0 THEN 'failed_deals'
+    WHEN pr.has_lead=1 AND pr.has_deal=0 AND pr.has_order=1 THEN 'sales_without_deal'
+    WHEN pr.has_lead=0 AND pr.has_deal=1 AND pr.has_order=1 THEN 'unknown_source'
+    WHEN pr.has_lead=1 AND pr.has_deal=0 AND pr.has_order=0 THEN 'leads_only'
+    WHEN pr.has_lead=0 AND pr.has_deal=1 AND pr.has_order=0 THEN 'deals_only'
+    WHEN pr.has_lead=0 AND pr.has_deal=0 AND pr.has_order=1 THEN 'orders_only'
+    ELSE 'unknown'
+  END AS segment,
+
+  CASE
+    WHEN pr.has_lead=1 AND pr.has_deal=1 AND pr.has_order=1 THEN 'Идеальный цикл'
+    WHEN pr.has_lead=1 AND pr.has_deal=1 AND pr.has_order=0 THEN 'Сорвавшиеся сделки'
+    WHEN pr.has_lead=1 AND pr.has_deal=0 AND pr.has_order=1 THEN 'Продажи без сделки'
+    WHEN pr.has_lead=0 AND pr.has_deal=1 AND pr.has_order=1 THEN 'Неизвестный источник'
+    WHEN pr.has_lead=1 AND pr.has_deal=0 AND pr.has_order=0 THEN 'Лиды'
+    WHEN pr.has_lead=0 AND pr.has_deal=1 AND pr.has_order=0 THEN 'Сделки'
+    WHEN pr.has_lead=0 AND pr.has_deal=0 AND pr.has_order=1 THEN 'Заказы'
+    ELSE 'Не классифицировано'
+  END AS segment_ru,
+
+  CASE
+    WHEN pr.has_lead=1 AND pr.has_deal=1 AND pr.has_order=1 THEN 'Lead + Deal + Order'
+    WHEN pr.has_lead=1 AND pr.has_deal=1 AND pr.has_order=0 THEN 'Lead + Deal'
+    WHEN pr.has_lead=1 AND pr.has_deal=0 AND pr.has_order=1 THEN 'Lead + Order'
+    WHEN pr.has_lead=0 AND pr.has_deal=1 AND pr.has_order=1 THEN 'Deal + Order'
+    WHEN pr.has_lead=1 AND pr.has_deal=0 AND pr.has_order=0 THEN 'Lead only'
+    WHEN pr.has_lead=0 AND pr.has_deal=1 AND pr.has_order=0 THEN 'Deal only'
+    WHEN pr.has_lead=0 AND pr.has_deal=0 AND pr.has_order=1 THEN 'Order only'
+    ELSE 'Unknown'
+  END AS segment_label
+
+FROM agg_by_phone a
+JOIN presence_by_phone pr
+  ON pr.phone_e164 = a.phone_e164
+LEFT JOIN orders_expanded o
+  ON o.phone_e164 = a.phone_e164
