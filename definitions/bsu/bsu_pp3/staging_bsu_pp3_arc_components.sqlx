@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "gal_bsu_pp3",
+  name: "staging_bsu_pp3_arc_components",
+  tags: ["bsu_pp3_arc_components", "bsu_pp3", "arc_components", "staging"],
+  description: "BSU PP3 ARC_COMPONENTS: нормализация, SK=SHA256(ID) по полям, дедуп по SK."
+}
+
+WITH src AS (
+  SELECT
+    ID,
+    ZAMID,
+    COMPNAME,
+    RCPWEIGHT,
+    PLANWEIGHT,
+    EXECUTIONWEIGHT,
+    DOBDZ,
+    FACTWEIGHT,
+    SOURCES,
+    STATE,
+    COMPGR,
+    RCPDENSITY,
+    REALDENSITY,
+    RCPHUMID,
+    REALHUMID,
+    DELAY,
+    COMPOSB
+  FROM ${ref("external_staging_bsu_pp3_arc_components")}
+),
+
+enriched AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(CAST(s.ID AS STRING))) AS surrogate_key
+  FROM src s
+)
+
+SELECT *
+FROM enriched
