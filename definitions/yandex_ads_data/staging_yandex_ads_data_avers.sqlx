@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: "yandex_ads_data",
+  name: "staging_yandex_ads_data_avers",
+  tags: ["yandex_ads_data_avers", "yandex_ads", "avers", "staging"],
+  description: "Staging-слой Yandex Ads (Avers) с приведением типов и расчётом surrogate_key."
+}
+
+SELECT
+  PARSE_DATE('%Y-%m-%d', Date) AS Date,
+  CampaignId,
+  CampaignName,
+  CampaignType,
+  AdGroupId,
+  AdGroupName,
+  AdId,
+  SAFE_CAST(Impressions AS INT64) AS Impressions,
+  SAFE_CAST(Clicks      AS INT64) AS Clicks,
+  SAFE_CAST(Cost        AS FLOAT64) AS Cost,
+ 
+  TO_HEX(
+    SHA256(
+      CONCAT(
+        CAST(PARSE_DATE('%Y-%m-%d', Date) AS STRING), '|',
+        CAST(CampaignId    AS STRING), '|',
+        CAST(AdGroupId     AS STRING), '|',
+        CAST(AdId          AS STRING)
+      )
+    )
+  ) AS surrogate_key
+
+FROM ${ref("external_staging_yandex_ads_data_avers")}
