@@ -1,0 +1,53 @@
+config {
+  type: "table",
+  schema: "gal_wialon",
+  name: "staging_wialon_summary",
+  tags: ["wialon_summary", "wialon", "summary", "staging"],
+  description: "Wialon Summary — подготовленный уровень по ТС (level=2, join с level=1, литры и дата).",
+
+  columns: {
+    number:              "Номер строки отчёта (level=2)",
+    name:                "Название ТС/объекта (из level=1)",
+    date:                "Дата отчёта (из name level=2, SAFE_CAST в DATE)",
+    start_level_lt:      "Уровень топлива в начале, л",
+    end_level_lt:        "Уровень топлива в конце, л",
+    fuel_refueled_lt:    "Заправлено топлива, л",
+    fuel_drained_lt:     "Слитое топливо, л",
+    dut_avg_lt_per_100km:"Средний расход по ДУТ, л/100 км",
+    dut_spent_lt:        "Израсходовано по ДУТ, л",
+    _ingested_at:        "Метка времени загрузки сырого отчёта из Wialon"
+  }
+}
+
+WITH joined AS (
+  SELECT
+    t2.number,  
+    t1.name AS name,                          
+    SAFE_CAST(t2.name AS DATE) AS date,      
+    t2.start_level_l,
+    t2.end_level_l, 
+    t2.fuel_refueled_l,
+    t2.fuel_drained_l, 
+    t2.avg_consumption_l_per_100km,
+    t2.dut_spent_l,
+    t2._ingested_at
+  FROM ${ref("external_staging_wialon_summary")} AS t2 
+  JOIN ${ref("external_staging_wialon_summary")} AS t1
+    ON t1.number       = t2.parent_number
+   AND t1._ingested_at = t2._ingested_at
+  WHERE t2.level = 2
+    AND t1.level = 1
+)
+
+SELECT
+  number,
+  name,
+  date,
+  SAFE_CAST(start_level_l              AS FLOAT64) AS start_level_lt,
+  SAFE_CAST(end_level_l                AS FLOAT64) AS end_level_lt,
+  SAFE_CAST(fuel_refueled_l            AS FLOAT64) AS fuel_refueled_lt,
+  SAFE_CAST(fuel_drained_l             AS FLOAT64) AS fuel_drained_lt,   
+  SAFE_CAST(avg_consumption_l_per_100km AS FLOAT64) AS dut_avg_lt_per_100km,
+  SAFE_CAST(dut_spent_l                AS FLOAT64) AS dut_spent_lt,
+  _ingested_at
+FROM joined
