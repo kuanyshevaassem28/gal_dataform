@@ -1,0 +1,220 @@
+config {
+  type: "incremental",
+  schema: "gal_wialon",
+  name: "history_wialon_summary",
+  tags: ["wialon_summary", "wialon", "summary", "history", "scd2"],
+  description: "Wialon Summary — SCD-2 история, surrogate_key = name|date, hash_diff по бизнес-полям.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    number:               "Номер строки отчёта (ТС/объект, level=2)",
+    name:                 "Название ТС/объекта",
+    date:                 "Дата отчёта",
+    start_level_lt:       "Уровень топлива в начале, л",
+    end_level_lt:         "Уровень топлива в конце, л",
+    fuel_refueled_lt:     "Заправлено топлива, л",
+    fuel_drained_lt:      "Слитое топливо, л",
+    dut_avg_lt_per_100km: "Средний расход по ДУТ, л/100 км",
+    dut_spent_lt:         "Израсходовано по ДУТ, л",
+    _ingested_at:         "Метка времени загрузки сырого отчёта из Wialon",
+
+    surrogate_key:        "Суррогатный ключ: name|date",
+    valid_from:           "Начало действия версии записи",
+    valid_to:             "Конец действия версии записи",
+    is_current:           "Флаг актуальной версии (TRUE — текущая)"
+  }
+}
+ 
+
+${when(incremental(), ` 
+
+WITH S_RAW AS (
+  SELECT
+    number,
+    name,
+    date,
+    start_level_lt,
+    end_level_lt,
+    fuel_refueled_lt,
+    fuel_drained_lt,
+    dut_avg_lt_per_100km,
+    dut_spent_lt,
+    _ingested_at,
+    TO_HEX(
+      SHA256(
+        CONCAT(
+          COALESCE(name, ''), '|',
+          COALESCE(CAST(date AS STRING), '')
+        )
+      )
+    ) AS surrogate_key
+  FROM ${ref("staging_wialon_summary")}
+),
+ 
+S_SRC AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      s.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY surrogate_key
+        ORDER BY _ingested_at DESC
+      ) AS rn
+    FROM S_RAW s
+  )
+  WHERE rn = 1
+),
+
+S AS (
+  SELECT
+    number,
+    name,
+    date,
+    start_level_lt,
+    end_level_lt,
+    fuel_refueled_lt,
+    fuel_drained_lt,
+    dut_avg_lt_per_100km,
+    dut_spent_lt,
+    _ingested_at,
+    surrogate_key
+  FROM S_SRC
+),
+
+H_CUR AS (
+  SELECT
+    surrogate_key,
+    valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h
+    USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL     
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s
+    USING (surrogate_key)
+  WHERE h.is_current = TRUE
+)
+ 
+SELECT
+  n.number,
+  n.name,
+  n.date,
+  n.start_level_lt,
+  n.end_level_lt,
+  n.fuel_refueled_lt,
+  n.fuel_drained_lt,
+  n.dut_avg_lt_per_100km,
+  n.dut_spent_lt,
+  n._ingested_at,
+  n.surrogate_key,
+  TRUE        AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')        AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+ 
+SELECT
+  h.number,
+  h.name,
+  h.date,
+  h.start_level_lt,
+  h.end_level_lt,
+  h.fuel_refueled_lt,
+  h.fuel_drained_lt,
+  h.dut_avg_lt_per_100km,
+  h.dut_spent_lt,
+  h._ingested_at,
+  h.surrogate_key,
+  FALSE       AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')        AS valid_to
+FROM ${self()} h
+JOIN CHANGED_KEYS ck
+  ON h.surrogate_key = ck.surrogate_key
+ AND h.valid_from    = ck.valid_from
+WHERE h.is_current = TRUE
+
+`, `
+ 
+WITH S_RAW AS (
+  SELECT
+    number,
+    name,
+    date,
+    start_level_lt,
+    end_level_lt,
+    fuel_refueled_lt,
+    fuel_drained_lt,
+    dut_avg_lt_per_100km,
+    dut_spent_lt,
+    _ingested_at,
+    TO_HEX(
+      SHA256(
+        CONCAT(
+          COALESCE(name, ''), '|',
+          COALESCE(CAST(date AS STRING), '')
+        )
+      )
+    ) AS surrogate_key
+  FROM ${ref("staging_wialon_summary")}
+),
+
+S_SRC AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      s.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY surrogate_key
+        ORDER BY _ingested_at DESC
+      ) AS rn
+    FROM S_RAW s
+  )
+  WHERE rn = 1
+),
+
+S AS (
+  SELECT
+    number,
+    name,
+    date,
+    start_level_lt,
+    end_level_lt,
+    fuel_refueled_lt,
+    fuel_drained_lt,
+    dut_avg_lt_per_100km,
+    dut_spent_lt,
+    _ingested_at,
+    surrogate_key
+  FROM S_SRC
+)
+
+SELECT
+  number,
+  name,
+  date,
+  start_level_lt,
+  end_level_lt,
+  fuel_refueled_lt,
+  fuel_drained_lt,
+  dut_avg_lt_per_100km,
+  dut_spent_lt,
+  _ingested_at,
+  surrogate_key,
+  TRUE        AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')        AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S
+
+`)}
