@@ -1,0 +1,396 @@
+config {
+  type: "table",
+  schema: "gal_bitrix24_marts",
+  name: "deals_mart",
+  tags: ["bitrix24_deals", "bitrix24", "deals", "mart"],
+  description: "Март-таблица сделок Bitrix24 с обогащением справочниками (компании, контакты, пользователи, статусы, UTM).",
+  columns: {
+    deal_id:                  "ID сделки (ID в Bitrix24)",
+    deal_title:               "Название сделки",
+    deal_type_id:             "Тип сделки (TYPE_ID)",
+    deal_stage_name:          "Человекочитаемое название стадии сделки",
+    stage_id:                 "Технический ID стадии (STAGE_ID)",
+    probability:              "Вероятность успешного закрытия сделки",
+    currency_id:              "Валюта сделки (CURRENCY_ID)",
+    opportunity:              "Сумма по сделке (OPPORTUNITY)",
+    is_manual_opportunity:    "Признак ручного задания суммы (IS_MANUAL_OPPORTUNITY)",
+    tax_value:                "Сумма налога по сделке",
+    lead_id:                  "Идентификатор лида, из которого пришла сделка",
+    company_id:               "Идентификатор компании",
+    company_name:             "Название компании",
+    contact_id:               "Идентификатор контактного лица",
+    contact_name:             "ФИО контактного лица",
+    quote_id:                 "ID связанного коммерческого предложения",
+    begin_date:               "Дата начала сделки (BEGINDATE)",
+    close_date:               "Плановая/фактическая дата закрытия сделки (CLOSEDATE)",
+    ASSIGNED_BY_ID:           "ID ответственного за сделку",
+    assigned_by_name:         "ФИО ответственного за сделку",
+    CREATED_BY_ID:            "ID пользователя, создавшего сделку",
+    created_by_name:          "ФИО пользователя, создавшего сделку",
+    MODIFY_BY_ID:             "ID пользователя, последним изменившего сделку",
+    modify_by_name:           "ФИО пользователя, последним изменившего сделку",
+    DATE_CREATE:              "Дата и время создания сделки",
+    DATE_MODIFY:              "Дата и время последнего изменения сделки",
+    OPENED:                   "Признак открытости сделки",
+    CLOSED:                   "Признак закрытости сделки",
+    COMMENTS:                 "Комментарии по сделке",
+    ADDITIONAL_INFO:          "Дополнительная информация по сделке",
+    LOCATION_ID:              "ID местоположения/адреса сделки",
+    category_id:              "ID категории сделки",
+    category_name:            "Название категории сделки",
+    STAGE_SEMANTIC_ID:        "Семантический статус стадии (S/P/F)",
+    stage_semantic_name:      "Человекочитаемое название статуса (успех/процесс/провал)",
+    IS_NEW:                   "Признак новой сделки",
+    IS_RECURRING:             "Признак повторяющейся сделки",
+    IS_RETURN_CUSTOMER:       "Признак возвратного клиента",
+    IS_REPEATED_APPROACH:     "Признак повторного обращения",
+    SOURCE_ID:                "ID источника сделки",
+    source_name:              "Название источника сделки",
+    SOURCE_DESCRIPTION:       "Описание источника сделки",
+    ORIGINATOR_ID:            "ID внешнего источника создания сделки",
+    ORIGIN_ID:                "Внешний ID сделки в источнике",
+    MOVED_BY_ID:              "ID пользователя, переместившего сделку по стадиям",
+    moved_by_name:            "ФИО пользователя, переместившего сделку по стадиям",
+    MOVED_TIME:               "Дата и время последнего перемещения по стадиям",
+    LAST_ACTIVITY_BY:         "ID пользователя последней активности по сделке",
+    last_activity_by_name:    "ФИО пользователя последней активности",
+    LAST_ACTIVITY_TIME:       "Дата и время последней активности по сделке",
+    UTM_SOURCE:               "Оригинальный UTM source из сделки",
+    UTM_MEDIUM:               "Оригинальный UTM medium из сделки",
+    UTM_CAMPAIGN:             "Оригинальный UTM campaign из сделки",
+    UTM_CONTENT:              "Оригинальный UTM content из сделки",
+    UTM_TERM:                 "Оригинальный UTM term из сделки",
+    payment_terms:            "Условия оплаты (кастомное поле)",
+    delivery_terms:           "Условия доставки (кастомное поле)",
+    delivery_deadline:        "Срок поставки (кастомное поле)",
+    construction_site:        "Объект строительства (кастомное поле)",
+    product_type:             "Тип/категория продукта",
+    initial_responsible_deal: "Изначально ответственный по сделке",
+    vat_type:                 "Тип НДС по сделке",
+    generate_documents:       "Флаг необходимости генерации документов",
+    rejection_reason:         "Причина отказа по сделке",
+    purchase_location:        "Место закупки (кастомное поле)",
+    comment:                  "Комментарий по сделке (кастомное поле)",
+    deal_key_person:          "Ключевое лицо по сделке",
+    design_effort_hours:      "Трудозатраты на проектирование (часы)",
+    design_cost:              "Стоимость проектирования",
+    contract_number:          "Номер договора по сделке",
+    contract_date:            "Дата договора",
+    contract_from:            "Дата начала действия договора",
+    first_responsive:         "Первый ответственный по сделке",
+    deal_for_tasks:           "Флаг использования сделки для задач",
+    deleted_in_1c:            "Признак удаления записи в 1С",
+    our_company:              "Наша компания (юридическое лицо)",
+    rs_utm_source:            "UTM source из RS/прокси-источника",
+    rs_utm_medium:            "UTM medium из RS/прокси-источника",
+    rs_utm_campaign:          "UTM campaign из RS/прокси-источника",
+    rs_utm_term:              "UTM term из RS/прокси-источника",
+    rs_utm_content:           "UTM content из RS/прокси-источника",
+    rs_google_client_id:      "Google Client ID (из RS)",
+    project_manager:          "Руководитель проекта",
+    chief_engineer:           "Главный инженер проекта",
+    required_fields:          "Флаг/список обязательных полей",
+    cover_volume:             "Объём покрытий (м³/м² — по договоренности)",
+    concrete_volume:          "Объём бетона",
+    lead_rejection_reason:    "Причина отказа лида",
+    cover_type:               "Тип покрытия",
+    last_approved_offer_id:   "ID последнего утвержденного КП",
+    last_approved_offer_url:  "URL просмотра последнего утвержденного КП",
+    last_approved_offer_download: "URL скачивания последнего утвержденного КП",
+    transport_budget:         "Бюджет на транспортные расходы",
+    cost_card_created:        "Признак, создана ли карточка затрат",
+    transport_cost_card:      "ID/признак карточки затрат на транспорт",
+    commission_card:          "ID/признак карточки комиссий",
+    client_type:              "Тип клиента (B2B/B2C/др.)",
+    delivery_region:          "Регион доставки",
+    linked_design_tasks:      "Связанные проектные задачи",
+    linked_sample_requests:   "Связанные заявки на образцы",
+    terminal_processing:      "Признак терминальной обработки",
+    previous_stage:           "Предыдущая стадия сделки",
+    implementation_contract:  "Договор реализации",
+    implementation_spec:      "Спецификация реализации",
+    specification:            "Основная спецификация сделки",
+    template_type:            "Тип шаблона документа/спецификации",
+    unique_specification:     "Признак уникальной спецификации",
+    intermediate_commissions: "Промежуточные комиссии",
+    transport_bonus_card:     "Карточка бонусов за перевозку",
+    support_tasks:            "Связанные задачи поддержки",
+    rs_project:               "Проект Bitrix RS",
+    utm_source_combined:      "Объединённый UTM source (из прямого и RS-источника)",
+    utm_medium_combined:      "Объединённый UTM medium (из прямого и RS-источника)",
+    utm_campaign_combined:    "Объединённый UTM campaign (из прямого и RS-источника)",
+    utm_content_combined:     "Объединённый UTM content (из прямого и RS-источника)",
+    utm_term_combined:        "Объединённый UTM term (из прямого и RS-источника)",
+    cid:                      "Параметр cid, извлечённый из utm_content_combined",
+    gid:                      "Параметр gid, извлечённый из utm_content_combined",
+    kwid:                     "Параметр kwid, извлечённый из utm_content_combined"
+  }
+}
+
+SELECT
+  d.ID AS deal_id,
+  d.TITLE AS deal_title,
+  d.TYPE_ID AS deal_type_id,
+  stg.name AS deal_stage_name,
+  d.STAGE_ID AS stage_id,
+  d.PROBABILITY AS probability,
+  d.CURRENCY_ID AS currency_id,
+  d.OPPORTUNITY AS opportunity,
+  d.IS_MANUAL_OPPORTUNITY AS is_manual_opportunity,
+  d.TAX_VALUE AS tax_value,
+  d.LEAD_ID AS lead_id,
+  d.COMPANY_ID AS company_id,
+  cl.TITLE AS company_name,
+  d.CONTACT_ID AS contact_id,
+  TRIM(CONCAT(
+    IFNULL(ct.LAST_NAME, ''),
+    IF(ct.LAST_NAME IS NOT NULL AND ct.NAME IS NOT NULL, ' ', ''),
+    IFNULL(ct.NAME, ''),
+    IF(ct.NAME IS NOT NULL AND ct.SECOND_NAME IS NOT NULL, ' ', ''),
+    IFNULL(ct.SECOND_NAME, '')
+  )) AS contact_name,
+  d.QUOTE_ID AS quote_id,
+  d.BEGINDATE AS begin_date,
+  d.CLOSEDATE AS close_date,
+  d.ASSIGNED_BY_ID,
+  TRIM(CONCAT(
+    IFNULL(u1.LAST_NAME, ''),
+    IF(u1.LAST_NAME IS NOT NULL AND u1.NAME IS NOT NULL, ' ', ''),
+    IFNULL(u1.NAME, ''),
+    IF(u1.NAME IS NOT NULL AND u1.SECOND_NAME IS NOT NULL, ' ', ''),
+    IFNULL(u1.SECOND_NAME, '')
+  )) AS assigned_by_name,
+  d.CREATED_BY_ID,
+  TRIM(CONCAT(
+    IFNULL(u2.LAST_NAME, ''),
+    IF(u2.LAST_NAME IS NOT NULL AND u2.NAME IS NOT NULL, ' ', ''),
+    IFNULL(u2.NAME, ''),
+    IF(u2.NAME IS NOT NULL AND u2.SECOND_NAME IS NOT NULL, ' ', ''),
+    IFNULL(u2.SECOND_NAME, '')
+  )) AS created_by_name,
+  d.MODIFY_BY_ID,
+  TRIM(CONCAT(
+    IFNULL(u3.LAST_NAME, ''),
+    IF(u3.LAST_NAME IS NOT NULL AND u3.NAME IS NOT NULL, ' ', ''),
+    IFNULL(u3.NAME, ''),
+    IF(u3.NAME IS NOT NULL AND u3.SECOND_NAME IS NOT NULL, ' ', ''),
+    IFNULL(u3.SECOND_NAME, '')
+  )) AS modify_by_name,
+  d.DATE_CREATE,
+  d.DATE_MODIFY,
+  d.OPENED,
+  d.CLOSED,
+  d.COMMENTS,
+  d.ADDITIONAL_INFO,
+  d.LOCATION_ID,
+  d.CATEGORY_ID AS category_id,
+  cat.NAME AS category_name,
+  d.STAGE_SEMANTIC_ID,
+  CASE
+    WHEN d.STAGE_SEMANTIC_ID = 'S' THEN 'Успешно завершено'
+    WHEN d.STAGE_SEMANTIC_ID = 'P' THEN 'В процессе'
+    WHEN d.STAGE_SEMANTIC_ID = 'F' THEN 'Провалено'
+    ELSE 'Неизвестно'
+  END AS stage_semantic_name,
+  d.IS_NEW,
+  d.IS_RECURRING,
+  d.IS_RETURN_CUSTOMER,
+  d.IS_REPEATED_APPROACH,
+  d.SOURCE_ID,
+  src.name AS source_name,
+  d.SOURCE_DESCRIPTION,
+  d.ORIGINATOR_ID,
+  d.ORIGIN_ID,
+  d.MOVED_BY_ID,
+  TRIM(CONCAT(
+    IFNULL(u4.LAST_NAME, ''),
+    IF(u4.LAST_NAME IS NOT NULL AND u4.NAME IS NOT NULL, ' ', ''),
+    IFNULL(u4.NAME, ''),
+    IF(u4.NAME IS NOT NULL AND u4.SECOND_NAME IS NOT NULL, ' ', ''),
+    IFNULL(u4.SECOND_NAME, '')
+  )) AS moved_by_name,
+  d.MOVED_TIME,
+  d.LAST_ACTIVITY_BY,
+  TRIM(CONCAT(
+    IFNULL(u5.LAST_NAME, ''),
+    IF(u5.LAST_NAME IS NOT NULL AND u5.NAME IS NOT NULL, ' ', ''),
+    IFNULL(u5.NAME, ''),
+    IF(u5.NAME IS NOT NULL AND u5.SECOND_NAME IS NOT NULL, ' ', ''),
+    IFNULL(u5.SECOND_NAME, '')
+  )) AS last_activity_by_name,
+  d.LAST_ACTIVITY_TIME,
+  d.UTM_SOURCE,
+  d.UTM_MEDIUM,
+  d.UTM_CAMPAIGN,
+  d.UTM_CONTENT,
+  d.UTM_TERM,
+  d.payment_terms,
+  d.delivery_terms,
+  d.delivery_deadline,
+  d.construction_site,
+  d.product_type,
+  d.initial_responsible_deal,
+  d.vat_type,
+  d.generate_documents,
+  d.rejection_reason,
+  d.purchase_location,
+  d.comment,
+  d.deal_key_person,
+  d.design_effort_hours,
+  d.design_cost,
+  d.contract_number,
+  d.contract_date,
+  d.contract_from,
+  d.first_responsive,
+  d.deal_for_tasks,
+  d.deleted_in_1c,
+  d.our_company,
+  d.rs_utm_source,
+  d.rs_utm_medium,
+  d.rs_utm_campaign,
+  d.rs_utm_term,
+  d.rs_utm_content,
+  d.rs_google_client_id,
+  d.project_manager,
+  d.chief_engineer,
+  d.required_fields,
+  d.cover_volume,
+  d.concrete_volume,
+  d.lead_rejection_reason,
+  d.cover_type,
+  d.last_approved_offer.id          AS last_approved_offer_id,
+  d.last_approved_offer.showUrl     AS last_approved_offer_url,
+  d.last_approved_offer.downloadUrl AS last_approved_offer_download,
+  d.transport_budget,
+  d.cost_card_created,
+  d.transport_cost_card,
+  d.commission_card,
+  d.client_type,
+  d.delivery_region,
+  d.linked_design_tasks,
+  d.linked_sample_requests,
+  d.terminal_processing,
+  d.previous_stage,
+  d.implementation_contract,
+  d.implementation_spec,
+  d.specification,
+  d.template_type,
+  d.unique_specification,
+  d.intermediate_commissions,
+  d.transport_bonus_card,
+  d.support_tasks,
+  d.rs_project,
+
+  -- utm_source_combined
+  CASE
+    WHEN LOWER(TRIM(d.utm_source)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.utm_source))
+    WHEN LOWER(TRIM(d.rs_utm_source)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.rs_utm_source))
+    ELSE NULL
+  END AS utm_source_combined,
+
+  -- utm_campaign_combined
+  CASE
+    WHEN LOWER(TRIM(d.utm_campaign)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.utm_campaign))
+    WHEN LOWER(TRIM(d.rs_utm_campaign)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.rs_utm_campaign))
+    ELSE NULL
+  END AS utm_campaign_combined,
+
+  -- utm_content_combined
+  CASE
+    WHEN LOWER(TRIM(d.utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.utm_content))
+    WHEN LOWER(TRIM(d.rs_utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.rs_utm_content))
+    ELSE NULL
+  END AS utm_content_combined,
+
+  -- utm_medium_combined
+  CASE
+    WHEN LOWER(TRIM(d.utm_medium)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.utm_medium))
+    WHEN LOWER(TRIM(d.rs_utm_medium)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.rs_utm_medium))
+    ELSE NULL
+  END AS utm_medium_combined,
+
+  -- utm_term_combined
+  CASE
+    WHEN LOWER(TRIM(d.utm_term)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.utm_term))
+    WHEN LOWER(TRIM(d.rs_utm_term)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+      THEN LOWER(TRIM(d.rs_utm_term))
+    ELSE NULL
+  END AS utm_term_combined,
+
+  -- cid / gid / kwid из utm_content
+  REGEXP_EXTRACT(
+    CASE
+      WHEN LOWER(TRIM(d.utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(d.utm_content))
+      WHEN LOWER(TRIM(d.rs_utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(d.rs_utm_content))
+      ELSE NULL
+    END,
+    r'cid\|([^|]+)'
+  ) AS cid,
+
+  REGEXP_EXTRACT(
+    CASE
+      WHEN LOWER(TRIM(d.utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(d.utm_content))
+      WHEN LOWER(TRIM(d.rs_utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(d.rs_utm_content))
+      ELSE NULL
+    END,
+    r'gid\|([^|]+)'
+  ) AS gid,
+
+  REGEXP_EXTRACT(
+    CASE
+      WHEN LOWER(TRIM(d.utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(d.utm_content))
+      WHEN LOWER(TRIM(d.rs_utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(d.rs_utm_content))
+      ELSE NULL
+    END,
+    r'kwid\|([^|]+)'
+  ) AS kwid
+
+FROM ${ref("history_bitrix24_deals")} d
+LEFT JOIN ${ref("history_bitrix24_status_list")} stg
+  ON CAST(d.STAGE_ID AS STRING) = stg.STATUS_ID
+ AND stg.ENTITY_ID = 'DEAL_STAGE'
+ AND stg.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_deal_category_list")} cat
+  ON d.CATEGORY_ID = cat.ID
+ AND cat.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_status_list")} src
+  ON d.SOURCE_ID = src.STATUS_ID
+ AND src.ENTITY_ID = 'SOURCE'
+ AND src.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_company_list")} cl
+  ON d.COMPANY_ID = cl.ID
+ AND cl.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_contacts")} ct
+  ON d.CONTACT_ID = ct.ID
+ AND ct.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_user_list")} u1
+  ON d.ASSIGNED_BY_ID = u1.ID
+ AND u1.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_user_list")} u2
+  ON d.CREATED_BY_ID = u2.ID
+ AND u2.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_user_list")} u3
+  ON d.MODIFY_BY_ID = u3.ID
+ AND u3.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_user_list")} u4
+  ON d.MOVED_BY_ID = u4.ID
+ AND u4.is_current = TRUE
+LEFT JOIN ${ref("history_bitrix24_user_list")} u5
+  ON d.LAST_ACTIVITY_BY = u5.ID
+ AND u5.is_current = TRUE
+WHERE d.is_current = TRUE
