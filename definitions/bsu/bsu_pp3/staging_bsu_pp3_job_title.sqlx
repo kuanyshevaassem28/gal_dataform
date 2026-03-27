@@ -1,0 +1,91 @@
+config {
+  type: "table",
+  schema: "df_bsu_pp3",
+  name: "staging_bsu_pp3_job_title",
+  tags: ["bsu_pp3_job_title", "bsu_pp3", "job_title", "staging"],
+  description: "BSU PP3 JOB_TITLE: нормализация типов, SK=SHA256(ORDERID), детерминированный staging без CURRENT_TIMESTAMP."
+}
+
+WITH src AS (
+  SELECT
+    COALESCE(ORDERID, 0) AS ORDERID,
+    ZAKAZNUM,
+    STATUS,
+    COALESCE(LINEID, 0) AS LINEID,
+    LINEFORCONT,
+    CONTNUM,
+    COALESCE(CREATEDATE, DATE "1970-01-01") AS CREATEDATE,
+    ELTRECIPENUM,
+    COALESCE(TRIM(RECIPEGROUP), '') AS RECIPEGROUP,
+    RECIPENAME,
+    COALESCE(TRIM(CUSTOMERGROUP), '') AS CUSTOMERGROUP,
+    PURPOSE,
+
+    -- STARTTIME (без CURRENT_TIMESTAMP)
+   COALESCE(
+    TIMESTAMP_MICROS(DIV(STARTTIME, 1000)),
+    CURRENT_TIMESTAMP()
+  )                             AS STARTTIME,
+  TIME1,
+  TIME2,
+  COALESCE(
+    TIMESTAMP_MICROS(DIV(ENDTIME, 1000)),
+    CURRENT_TIMESTAMP()
+  )                             AS ENDTIME,
+
+  CHIEFNAME,
+  RECIPESNR,
+  EXITP,
+  MARSHVY,
+  MARSHDTL,
+  PLANVOLUME,
+  PLANZAMVOL,
+  PLANZAM,
+  LIMZAMVOL,
+  STOPZAM,
+  SUMVOL,
+  ZAMNUM,
+  SMESITELI,
+  VARINTRPRZA,
+  VARVYSM,
+
+  -- системное время события: мс → TIMESTAMP
+  COALESCE(
+    TIMESTAMP_MICROS(DIV(SMPSYSTIME, 1000)),
+    CURRENT_TIMESTAMP()
+  )                             AS SMPSYSTIME,
+
+    ADDRESS,
+    NUMBERAUTO,
+    FIODRIVER,
+    RESERV1,
+    RECIPECODE,
+    NORMCURR,
+    DNORMCURR,
+    NTPREDVSM,
+    SENSVL,
+    DZMAX,
+    P_PLANVOL,
+    P_FACTVOL,
+    P_STATE,
+    FLAGCRREPORT,
+    AV_GUID1,
+    AV_GUID2,
+    AV_ZAK,
+    AV_NAME,
+    WNTM1,
+    WNTM2,
+    WNTM3,
+    WNTM4
+
+  FROM ${ref("external_staging_bsu_pp3_job_title")}
+),
+
+enriched AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(CAST(s.ORDERID AS STRING))) AS surrogate_key
+  FROM src s
+)
+
+SELECT * FROM enriched
