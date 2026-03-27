@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  database: "galery-22579",
+  schema: "gal_google_sheets",
+  name: "external_utm_ads_dict"
+}
