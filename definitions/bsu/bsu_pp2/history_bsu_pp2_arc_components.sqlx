@@ -1,0 +1,206 @@
+config {
+  type: "incremental",
+  schema: "gal_bsu_pp2",
+  name: "history_bsu_pp2_arc_components",
+  tags: ["bsu_pp2_arc_components", "bsu_pp2", "arc_components", "history", "scd2"],
+  description: "BSU PP2 ARC_COMPONENTS: SCD2-история по ID (SK=SHA256(ID)).",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(
+  incremental(),
+  `
+  WITH S AS (
+    SELECT
+      ID,
+      ZAMID,
+      COMPNAME,
+      RCPWEIGHT,
+      PLANWEIGHT,
+      EXECUTIONWEIGHT,
+      DOBDZ,
+      FACTWEIGHT,
+      SOURCES,
+      STATE,
+      COMPGR,
+      RCPDENSITY,
+      REALDENSITY,
+      RCPHUMID,
+      REALHUMID,
+      DELAY,
+      COMPOSB,
+      TO_HEX(SHA256(CAST(ID AS STRING))) AS surrogate_key
+    FROM ${ref("external_staging_bsu_pp2_arc_components")}
+
+  ),
+ 
+  H_CUR AS (
+    SELECT
+      ID,
+      ZAMID,
+      COMPNAME,
+      RCPWEIGHT,
+      PLANWEIGHT,
+      EXECUTIONWEIGHT,
+      DOBDZ,
+      FACTWEIGHT,
+      SOURCES,
+      STATE,
+      COMPGR,
+      RCPDENSITY,
+      REALDENSITY,
+      RCPHUMID,
+      REALHUMID,
+      DELAY,
+      COMPOSB,
+      surrogate_key,
+      valid_from
+    FROM ${self()}
+    WHERE is_current = TRUE
+  ),
+ 
+  NEW_OR_CHANGED AS (
+    SELECT s.*
+    FROM S s
+    LEFT JOIN H_CUR h
+      ON h.surrogate_key = s.surrogate_key
+    WHERE
+      h.surrogate_key IS NULL -- новая запись
+      OR
+      (
+        h.ZAMID           IS DISTINCT FROM s.ZAMID           OR
+        h.COMPNAME        IS DISTINCT FROM s.COMPNAME        OR
+        h.RCPWEIGHT       IS DISTINCT FROM s.RCPWEIGHT       OR
+        h.PLANWEIGHT      IS DISTINCT FROM s.PLANWEIGHT      OR
+        h.EXECUTIONWEIGHT IS DISTINCT FROM s.EXECUTIONWEIGHT OR
+        h.DOBDZ           IS DISTINCT FROM s.DOBDZ           OR
+        h.FACTWEIGHT      IS DISTINCT FROM s.FACTWEIGHT      OR
+        h.SOURCES         IS DISTINCT FROM s.SOURCES         OR
+        h.STATE           IS DISTINCT FROM s.STATE           OR
+        h.COMPGR          IS DISTINCT FROM s.COMPGR          OR
+        h.RCPDENSITY      IS DISTINCT FROM s.RCPDENSITY      OR
+        h.REALDENSITY     IS DISTINCT FROM s.REALDENSITY     OR
+        h.RCPHUMID        IS DISTINCT FROM s.RCPHUMID        OR
+        h.REALHUMID       IS DISTINCT FROM s.REALHUMID       OR
+        h.DELAY           IS DISTINCT FROM s.DELAY           OR
+        h.COMPOSB         IS DISTINCT FROM s.COMPOSB
+      )
+  ),
+ 
+  CHANGED_KEYS AS (
+    SELECT DISTINCT
+      h.surrogate_key,
+      h.valid_from
+    FROM ${self()} h
+    JOIN NEW_OR_CHANGED s
+      ON h.surrogate_key = s.surrogate_key
+    WHERE h.is_current = TRUE
+  )
+ 
+  SELECT
+    n.ID,
+    n.ZAMID,
+    n.COMPNAME,
+    n.RCPWEIGHT,
+    n.PLANWEIGHT,
+    n.EXECUTIONWEIGHT,
+    n.DOBDZ,
+    n.FACTWEIGHT,
+    n.SOURCES,
+    n.STATE,
+    n.COMPGR,
+    n.RCPDENSITY,
+    n.REALDENSITY,
+    n.RCPHUMID,
+    n.REALHUMID,
+    n.DELAY,
+    n.COMPOSB,
+    TRUE  AS is_current,
+    CURRENT_DATETIME() AS valid_from,
+    CAST(NULL AS DATETIME) AS valid_to,
+    n.surrogate_key
+  FROM NEW_OR_CHANGED n
+
+  UNION ALL
+ 
+  SELECT
+    h.ID,
+    h.ZAMID,
+    h.COMPNAME,
+    h.RCPWEIGHT,
+    h.PLANWEIGHT,
+    h.EXECUTIONWEIGHT,
+    h.DOBDZ,
+    h.FACTWEIGHT,
+    h.SOURCES,
+    h.STATE,
+    h.COMPGR,
+    h.RCPDENSITY,
+    h.REALDENSITY,
+    h.RCPHUMID,
+    h.REALHUMID,
+    h.DELAY,
+    h.COMPOSB,
+    FALSE AS is_current,
+    h.valid_from,
+    CURRENT_DATETIME() AS valid_to,
+    h.surrogate_key
+  FROM ${self()} h
+  JOIN CHANGED_KEYS ck
+    ON h.surrogate_key = ck.surrogate_key
+   AND h.valid_from    = ck.valid_from
+  WHERE h.is_current = TRUE
+
+  `,
+  `
+ 
+  WITH S AS (
+    SELECT
+      ID,
+      ZAMID,
+      COMPNAME,
+      RCPWEIGHT,
+      PLANWEIGHT,
+      EXECUTIONWEIGHT,
+      DOBDZ,
+      FACTWEIGHT,
+      SOURCES,
+      STATE,
+      COMPGR,
+      RCPDENSITY,
+      REALDENSITY,
+      RCPHUMID,
+      REALHUMID,
+      DELAY,
+      COMPOSB,
+      TO_HEX(SHA256(CAST(ID AS STRING))) AS surrogate_key
+    FROM ${ref("external_staging_bsu_pp2_arc_components")}
+
+  )
+
+  SELECT
+    ID,
+    ZAMID,
+    COMPNAME,
+    RCPWEIGHT,
+    PLANWEIGHT,
+    EXECUTIONWEIGHT,
+    DOBDZ,
+    FACTWEIGHT,
+    SOURCES,
+    STATE,
+    COMPGR,
+    RCPDENSITY,
+    REALDENSITY,
+    RCPHUMID,
+    REALHUMID,
+    DELAY,
+    COMPOSB,
+    TRUE  AS is_current,
+    CURRENT_DATETIME() AS valid_from,
+    CAST(NULL AS DATETIME) AS valid_to,
+    surrogate_key
+  FROM S
+
+  `
+)}
