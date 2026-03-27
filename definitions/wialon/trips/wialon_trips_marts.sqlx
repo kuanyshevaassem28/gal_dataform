@@ -1,0 +1,50 @@
+config {
+  type: "table",
+  schema: "gal_wialon_marts",
+  name: "wialon_trips_marts",
+  tags: ["wialon_trips", "wialon", "trips", "mart"],
+  description: "Март поездок Wialon (только актуальные версии из history_wialon_trips).",
+
+  columns: {
+    number:          "Номер строки Wialon-отчёта",
+    level:           "Уровень строки (3 = поездка)",
+    parent_number:   "Номер родительской строки",
+    subrows_count:   "Количество подстрок",
+    row_n:           "Порядковый номер строки",
+    date:            "Дата поездки",
+    name:            "Объект / трек",
+    start_type:      "Тип начала поездки",
+    start_pos:       "Начальная точка (адрес/координаты)",
+    end_type:        "Тип окончания поездки",
+    end_pos:         "Конечная точка (адрес/координаты)",
+    distance_km:     "Дистанция, км",
+    avg_speed_km_h:  "Средняя скорость, км/ч",
+    max_speed_km_h:  "Максимальная скорость, км/ч",
+    total_time_sec:  "Длительность, сек",
+    _ingested_at:    "Время загрузки исходного отчёта",
+    table_index:     "Индекс таблицы в отчёте",
+    surrogate_key:   "Суррогатный ключ поездки (number|name|date)"
+  }
+}
+
+SELECT
+  number,
+  level,
+  parent_number,
+  subrows_count,
+  row_n,
+  date,
+  name,
+  start_type,
+  start_pos,
+  end_type,
+  end_pos,
+  distance_km,
+  avg_speed_km_h,
+  max_speed_km_h,
+  total_time_sec,
+  _ingested_at,
+  table_index,
+  surrogate_key
+FROM ${ref("history_wialon_trips")}
+WHERE is_current = TRUE
