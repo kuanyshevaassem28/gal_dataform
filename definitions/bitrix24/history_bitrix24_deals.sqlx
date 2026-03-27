@@ -1,0 +1,501 @@
+config {
+  type: "incremental",
+  schema: "gal_bitrix24",
+  name: "history_bitrix24_deals",
+  tags: ["bitrix24_deals", "bitrix24", "deals", "history", "scd2"],
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  description: "SCD2 история сделок Bitrix24. surrogate_key = SHA256(ID). hash_diff используется для определения изменений.",
+
+  columns: {
+  surrogate_key: "Суррогатный ключ сделки (SHA256 от ID). Используется для связывания версий одной сделки.",
+  hash_diff: "Хэш всех бизнес-полей сделки. Используется для определения изменений в SCD2.",
+  is_current: "Флаг актуальной версии записи (TRUE = текущая версия сделки).",
+  valid_from: "Дата/время начала действия версии записи (SCD2).",
+  valid_to: "Дата/время окончания действия версии записи (SCD2). NULL = версия актуальна.",
+
+  ID: "ID сделки в Bitrix24 (натуральный ключ).",
+  TITLE: "Название сделки.",
+  TYPE_ID: "Тип сделки.",
+  STAGE_ID: "Идентификатор стадии сделки.",
+  PROBABILITY: "Вероятность успеха сделки (в процентах).",
+  CURRENCY_ID: "Валюта сделки.",
+  OPPORTUNITY: "Сумма сделки.",
+  IS_MANUAL_OPPORTUNITY: "Признак ручного ввода суммы сделки.",
+  TAX_VALUE: "Сумма налога / НДС по сделке.",
+  LEAD_ID: "Связанный лид.",
+  COMPANY_ID: "Связанная компания.",
+  CONTACT_ID: "Связанный контакт.",
+  QUOTE_ID: "Связанное коммерческое предложение.",
+
+  BEGINDATE: "Дата начала сделки.",
+  CLOSEDATE: "Дата закрытия сделки.",
+  DATE_CREATE: "Дата/время создания сделки.",
+  DATE_MODIFY: "Дата/время последнего изменения сделки.",
+
+  ASSIGNED_BY_ID: "ID ответственного сотрудника.",
+  CREATED_BY_ID: "ID пользователя, создавшего сделку.",
+  MODIFY_BY_ID: "ID пользователя, последним изменившего сделку.",
+
+  OPENED: "Признак открытости сделки.",
+  CLOSED: "Признак закрытия сделки.",
+
+  COMMENTS: "Комментарий или описание сделки.",
+  ADDITIONAL_INFO: "Дополнительная информация по сделке.",
+  LOCATION_ID: "ID местоположения.",
+  CATEGORY_ID: "ID категории сделки.",
+  STAGE_SEMANTIC_ID: "Семантический статус стадии (успех/провал/в работе).",
+
+  IS_NEW: "Признак новой сделки.",
+  IS_RECURRING: "Признак повторяющейся сделки.",
+  IS_RETURN_CUSTOMER: "Признак возвратного клиента.",
+  IS_REPEATED_APPROACH: "Признак повторного обращения клиента.",
+
+  SOURCE_ID: "ID источника сделки.",
+  SOURCE_DESCRIPTION: "Описание источника сделки.",
+  ORIGINATOR_ID: "ID источника создания сделки.",
+  ORIGIN_ID: "Внешний ID источника.",
+
+  MOVED_BY_ID: "ID пользователя, переместившего сделку по стадиям.",
+  MOVED_TIME: "Дата/время перемещения сделки.",
+  LAST_ACTIVITY_TIME: "Время последней активности по сделке.",
+  LAST_COMMUNICATION_TIME: "Время последней коммуникации.",
+  LAST_ACTIVITY_BY: "ID пользователя последней активности.",
+
+  UTM_SOURCE: "UTM Source.",
+  UTM_MEDIUM: "UTM Medium.",
+  UTM_CAMPAIGN: "UTM Campaign.",
+  UTM_CONTENT: "UTM Content.",
+  UTM_TERM: "UTM Term.",
+
+  PARENT_ID_1078: "Кастомное поле Bitrix: PARENT_ID_1078.",
+  PARENT_ID_1088: "Кастомное поле Bitrix: PARENT_ID_1088.",
+  PARENT_ID_1098: "Кастомное поле Bitrix: PARENT_ID_1098.",
+  PARENT_ID_1102: "Кастомное поле Bitrix: PARENT_ID_1102.",
+  PARENT_ID_1116: "Кастомное поле Bitrix: PARENT_ID_1116.",
+  PARENT_ID_1122: "Кастомное поле Bitrix: PARENT_ID_1122.",
+  PARENT_ID_1126: "Кастомное поле Bitrix: PARENT_ID_1126.",
+  PARENT_ID_1138: "Кастомное поле Bitrix: PARENT_ID_1138.",
+  PARENT_ID_1142: "Кастомное поле Bitrix: PARENT_ID_1142.",
+  PARENT_ID_1152: "Кастомное поле Bitrix: PARENT_ID_1152.",
+  PARENT_ID_1156: "Кастомное поле Bitrix: PARENT_ID_1156.",
+
+  payment_terms: "Условия оплаты.",
+  delivery_terms: "Условия доставки.",
+  delivery_deadline: "Срок поставки.",
+  construction_site: "Объект строительства.",
+  product_type: "Тип товара или продукта.",
+  initial_responsible_deal: "Изначальный ответственный по сделке.",
+  vat_type: "Тип НДС.",
+  generate_documents: "Флаг генерации документов.",
+  rejection_reason: "Причина отказа.",
+  purchase_location: "Место закупки.",
+  comment: "Дополнительный комментарий.",
+  deal_key_person: "Ключевое лицо сделки.",
+  design_effort_hours: "Часы проектирования.",
+  design_cost: "Стоимость проектирования.",
+  contract_number: "Номер договора.",
+  contract_date: "Дата договора.",
+  contract_from: "Договор от (дата).",
+  first_responsive: "Первый ответственный.",
+  deal_for_tasks: "Флаг использования сделки в задачах.",
+  deleted_in_1c: "Признак удаления сделки в 1С.",
+  our_company: "Наша компания.",
+
+  rs_utm_source: "RS UTM Source.",
+  rs_utm_medium: "RS UTM Medium.",
+  rs_utm_campaign: "RS UTM Campaign.",
+  rs_utm_term: "RS UTM Term.",
+  rs_utm_content: "RS UTM Content.",
+  rs_google_client_id: "RS Google Client ID.",
+
+  project_manager: "Руководитель проекта.",
+  chief_engineer: "Главный инженер.",
+  required_fields: "Обязательные поля.",
+  cover_volume: "Объем покрытий.",
+  concrete_volume: "Объем бетона.",
+  lead_rejection_reason: "Причина отказа лида.",
+  cover_type: "Тип покрытия.",
+
+  transport_budget: "Бюджет на перевозку.",
+  cost_card_created: "Признак создания карточки затрат.",
+  transport_cost_card: "Карточка затрат на перевозку.",
+  commission_card: "Карточка комиссий.",
+  client_type: "Тип клиента.",
+  delivery_region: "Регион доставки.",
+  linked_design_tasks: "Связанные проектные задачи.",
+  linked_sample_requests: "Связанные заявки на образцы.",
+  terminal_processing: "Терминальная обработка.",
+  previous_stage: "Предыдущая стадия сделки.",
+  implementation_contract: "Договор реализации.",
+  implementation_spec: "Спецификация реализации.",
+  specification: "Спецификация.",
+  template_type: "Тип шаблона.",
+  unique_specification: "Уникальная спецификация.",
+  intermediate_commissions: "Промежуточные комиссии.",
+  transport_bonus_card: "Карточка бонусов за перевозку.",
+  support_tasks: "Задачи поддержки.",
+  rs_project: "Проект Bitrix RS.",
+
+  last_approved_offer: "Структура последнего утвержденного коммерческого предложения.",
+  "last_approved_offer.id": "ID последнего утвержденного коммерческого предложения.",
+  "last_approved_offer.showUrl": "URL просмотра коммерческого предложения.",
+  "last_approved_offer.downloadUrl": "URL скачивания коммерческого предложения."
+}
+}
+
+${when(incremental(), `
+
+WITH
+
+-- 1️⃣ Источник
+S AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key
+  FROM ${ref("external_staging_bitrix24_deals")} s
+),
+
+-- 2️⃣ Текущие версии
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+-- 3️⃣ Новые сделки
+NEW_ROWS AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+  WHERE h.surrogate_key IS NULL
+),
+
+-- 4️⃣ Изменённые сделки (сравниваем ВСЕ поля)
+CHANGED_ROWS AS (
+  SELECT s.*
+  FROM S s
+  JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+  WHERE
+       s.TITLE IS DISTINCT FROM h.TITLE
+    OR s.TYPE_ID IS DISTINCT FROM h.TYPE_ID
+    OR s.STAGE_ID IS DISTINCT FROM h.STAGE_ID
+    OR s.PROBABILITY IS DISTINCT FROM h.PROBABILITY
+    OR s.CURRENCY_ID IS DISTINCT FROM h.CURRENCY_ID
+    OR s.OPPORTUNITY IS DISTINCT FROM h.OPPORTUNITY
+    OR s.IS_MANUAL_OPPORTUNITY IS DISTINCT FROM h.IS_MANUAL_OPPORTUNITY
+    OR s.TAX_VALUE IS DISTINCT FROM h.TAX_VALUE
+    OR s.LEAD_ID IS DISTINCT FROM h.LEAD_ID
+    OR s.COMPANY_ID IS DISTINCT FROM h.COMPANY_ID
+    OR s.CONTACT_ID IS DISTINCT FROM h.CONTACT_ID
+    OR s.QUOTE_ID IS DISTINCT FROM h.QUOTE_ID
+    OR s.BEGINDATE IS DISTINCT FROM h.BEGINDATE
+    OR s.CLOSEDATE IS DISTINCT FROM h.CLOSEDATE
+    OR s.ASSIGNED_BY_ID IS DISTINCT FROM h.ASSIGNED_BY_ID
+    OR s.CREATED_BY_ID IS DISTINCT FROM h.CREATED_BY_ID
+    OR s.MODIFY_BY_ID IS DISTINCT FROM h.MODIFY_BY_ID
+    OR s.DATE_CREATE IS DISTINCT FROM h.DATE_CREATE
+    OR s.DATE_MODIFY IS DISTINCT FROM h.DATE_MODIFY
+    OR s.OPENED IS DISTINCT FROM h.OPENED
+    OR s.CLOSED IS DISTINCT FROM h.CLOSED
+    OR s.COMMENTS IS DISTINCT FROM h.COMMENTS
+    OR s.ADDITIONAL_INFO IS DISTINCT FROM h.ADDITIONAL_INFO
+    OR s.LOCATION_ID IS DISTINCT FROM h.LOCATION_ID
+    OR s.CATEGORY_ID IS DISTINCT FROM h.CATEGORY_ID
+    OR s.STAGE_SEMANTIC_ID IS DISTINCT FROM h.STAGE_SEMANTIC_ID
+    OR s.IS_NEW IS DISTINCT FROM h.IS_NEW
+    OR s.IS_RECURRING IS DISTINCT FROM h.IS_RECURRING
+    OR s.IS_RETURN_CUSTOMER IS DISTINCT FROM h.IS_RETURN_CUSTOMER
+    OR s.IS_REPEATED_APPROACH IS DISTINCT FROM h.IS_REPEATED_APPROACH
+    OR s.SOURCE_ID IS DISTINCT FROM h.SOURCE_ID
+    OR s.SOURCE_DESCRIPTION IS DISTINCT FROM h.SOURCE_DESCRIPTION
+    OR s.ORIGINATOR_ID IS DISTINCT FROM h.ORIGINATOR_ID
+    OR s.ORIGIN_ID IS DISTINCT FROM h.ORIGIN_ID
+    OR s.MOVED_BY_ID IS DISTINCT FROM h.MOVED_BY_ID
+    OR s.MOVED_TIME IS DISTINCT FROM h.MOVED_TIME
+    OR s.LAST_ACTIVITY_TIME IS DISTINCT FROM h.LAST_ACTIVITY_TIME
+    OR s.LAST_COMMUNICATION_TIME IS DISTINCT FROM h.LAST_COMMUNICATION_TIME
+    OR s.LAST_ACTIVITY_BY IS DISTINCT FROM h.LAST_ACTIVITY_BY
+    OR s.UTM_SOURCE IS DISTINCT FROM h.UTM_SOURCE
+    OR s.UTM_MEDIUM IS DISTINCT FROM h.UTM_MEDIUM
+    OR s.UTM_CAMPAIGN IS DISTINCT FROM h.UTM_CAMPAIGN
+    OR s.UTM_CONTENT IS DISTINCT FROM h.UTM_CONTENT
+    OR s.UTM_TERM IS DISTINCT FROM h.UTM_TERM
+    OR s.deleted_in_1c IS DISTINCT FROM h.deleted_in_1c
+    OR s.cost_card_created IS DISTINCT FROM h.cost_card_created
+    OR s.last_approved_offer.id IS DISTINCT FROM h.last_approved_offer.id
+    OR s.last_approved_offer.showUrl IS DISTINCT FROM h.last_approved_offer.showUrl
+    OR s.last_approved_offer.downloadUrl IS DISTINCT FROM h.last_approved_offer.downloadUrl
+),
+
+-- 5️⃣ Закрываем старые версии
+CLOSE_OLD AS (
+  SELECT
+    h.ID,
+    h.TITLE,
+    h.TYPE_ID,
+    h.STAGE_ID,
+    h.PROBABILITY,
+    h.CURRENCY_ID,
+    h.OPPORTUNITY,
+    h.IS_MANUAL_OPPORTUNITY,
+    h.TAX_VALUE,
+    h.LEAD_ID,
+    h.COMPANY_ID,
+    h.CONTACT_ID,
+    h.QUOTE_ID,
+    h.BEGINDATE,
+    h.CLOSEDATE,
+    h.ASSIGNED_BY_ID,
+    h.CREATED_BY_ID,
+    h.MODIFY_BY_ID,
+    h.DATE_CREATE,
+    h.DATE_MODIFY,
+    h.OPENED,
+    h.CLOSED,
+    h.COMMENTS,
+    h.ADDITIONAL_INFO,
+    h.LOCATION_ID,
+    h.CATEGORY_ID,
+    h.STAGE_SEMANTIC_ID,
+    h.IS_NEW,
+    h.IS_RECURRING,
+    h.IS_RETURN_CUSTOMER,
+    h.IS_REPEATED_APPROACH,
+    h.SOURCE_ID,
+    h.SOURCE_DESCRIPTION,
+    h.ORIGINATOR_ID,
+    h.ORIGIN_ID,
+    h.MOVED_BY_ID,
+    h.MOVED_TIME,
+    h.LAST_ACTIVITY_TIME,
+    h.LAST_COMMUNICATION_TIME,
+    h.LAST_ACTIVITY_BY,
+    h.UTM_SOURCE,
+    h.UTM_MEDIUM,
+    h.UTM_CAMPAIGN,
+    h.UTM_CONTENT,
+    h.UTM_TERM,
+    h.PARENT_ID_1078,
+    h.PARENT_ID_1088,
+    h.PARENT_ID_1098,
+    h.PARENT_ID_1102,
+    h.PARENT_ID_1116,
+    h.PARENT_ID_1122,
+    h.PARENT_ID_1126,
+    h.PARENT_ID_1138,
+    h.PARENT_ID_1142,
+    h.PARENT_ID_1152,
+    h.PARENT_ID_1156,
+    h.payment_terms,
+    h.delivery_terms,
+    h.delivery_deadline,
+    h.construction_site,
+    h.product_type,
+    h.initial_responsible_deal,
+    h.vat_type,
+    h.generate_documents,
+    h.rejection_reason,
+    h.purchase_location,
+    h.comment,
+    h.deal_key_person,
+    h.design_effort_hours,
+    h.design_cost,
+    h.contract_number,
+    h.contract_date,
+    h.contract_from,
+    h.first_responsive,
+    h.deal_for_tasks,
+    h.deleted_in_1c,
+    h.our_company,
+    h.rs_utm_source,
+    h.rs_utm_medium,
+    h.rs_utm_campaign,
+    h.rs_utm_term,
+    h.rs_utm_content,
+    h.rs_google_client_id,
+    h.project_manager,
+    h.chief_engineer,
+    h.required_fields,
+    h.cover_volume,
+    h.concrete_volume,
+    h.lead_rejection_reason,
+    h.cover_type,
+    h.transport_budget,
+    h.cost_card_created,
+    h.transport_cost_card,
+    h.commission_card,
+    h.client_type,
+    h.delivery_region,
+    h.linked_design_tasks,
+    h.linked_sample_requests,
+    h.terminal_processing,
+    h.previous_stage,
+    h.implementation_contract,
+    h.implementation_spec,
+    h.specification,
+    h.template_type,
+    h.unique_specification,
+    h.intermediate_commissions,
+    h.transport_bonus_card,
+    h.support_tasks,
+    h.rs_project,
+    h.last_approved_offer,
+    h.surrogate_key,
+    FALSE AS is_current,
+    h.valid_from,
+    CURRENT_DATETIME('Asia/Almaty') AS valid_to
+  FROM H_CUR h
+  JOIN CHANGED_ROWS c
+    ON h.surrogate_key = c.surrogate_key
+),
+
+-- 6️⃣ Вставляем новые версии
+INSERT_NEW AS (
+  SELECT
+    s.ID,
+    s.TITLE,
+    s.TYPE_ID,
+    s.STAGE_ID,
+    s.PROBABILITY,
+    s.CURRENCY_ID,
+    s.OPPORTUNITY,
+    s.IS_MANUAL_OPPORTUNITY,
+    s.TAX_VALUE,
+    s.LEAD_ID,
+    s.COMPANY_ID,
+    s.CONTACT_ID,
+    s.QUOTE_ID,
+    s.BEGINDATE,
+    s.CLOSEDATE,
+    s.ASSIGNED_BY_ID,
+    s.CREATED_BY_ID,
+    s.MODIFY_BY_ID,
+    s.DATE_CREATE,
+    s.DATE_MODIFY,
+    s.OPENED,
+    s.CLOSED,
+    s.COMMENTS,
+    s.ADDITIONAL_INFO,
+    s.LOCATION_ID,
+    s.CATEGORY_ID,
+    s.STAGE_SEMANTIC_ID,
+    s.IS_NEW,
+    s.IS_RECURRING,
+    s.IS_RETURN_CUSTOMER,
+    s.IS_REPEATED_APPROACH,
+    s.SOURCE_ID,
+    s.SOURCE_DESCRIPTION,
+    s.ORIGINATOR_ID,
+    s.ORIGIN_ID,
+    s.MOVED_BY_ID,
+    s.MOVED_TIME,
+    s.LAST_ACTIVITY_TIME,
+    s.LAST_COMMUNICATION_TIME,
+    s.LAST_ACTIVITY_BY,
+    s.UTM_SOURCE,
+    s.UTM_MEDIUM,
+    s.UTM_CAMPAIGN,
+    s.UTM_CONTENT,
+    s.UTM_TERM,
+    s.PARENT_ID_1078,
+    s.PARENT_ID_1088,
+    s.PARENT_ID_1098,
+    s.PARENT_ID_1102,
+    s.PARENT_ID_1116,
+    s.PARENT_ID_1122,
+    s.PARENT_ID_1126,
+    s.PARENT_ID_1138,
+    s.PARENT_ID_1142,
+    s.PARENT_ID_1152,
+    s.PARENT_ID_1156,
+    s.payment_terms,
+    s.delivery_terms,
+    s.delivery_deadline,
+    s.construction_site,
+    s.product_type,
+    s.initial_responsible_deal,
+    s.vat_type,
+    s.generate_documents,
+    s.rejection_reason,
+    s.purchase_location,
+    s.comment,
+    s.deal_key_person,
+    s.design_effort_hours,
+    s.design_cost,
+    s.contract_number,
+    s.contract_date,
+    s.contract_from,
+    s.first_responsive,
+    s.deal_for_tasks,
+    s.deleted_in_1c,
+    s.our_company,
+    s.rs_utm_source,
+    s.rs_utm_medium,
+    s.rs_utm_campaign,
+    s.rs_utm_term,
+    s.rs_utm_content,
+    s.rs_google_client_id,
+    s.project_manager,
+    s.chief_engineer,
+    s.required_fields,
+    s.cover_volume,
+    s.concrete_volume,
+    s.lead_rejection_reason,
+    s.cover_type,
+    s.transport_budget,
+    s.cost_card_created,
+    s.transport_cost_card,
+    s.commission_card,
+    s.client_type,
+    s.delivery_region,
+    s.linked_design_tasks,
+    s.linked_sample_requests,
+    s.terminal_processing,
+    s.previous_stage,
+    s.implementation_contract,
+    s.implementation_spec,
+    s.specification,
+    s.template_type,
+    s.unique_specification,
+    s.intermediate_commissions,
+    s.transport_bonus_card,
+    s.support_tasks,
+    s.rs_project,
+    s.last_approved_offer,
+    s.surrogate_key,
+    TRUE AS is_current,
+    CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+    CAST(NULL AS DATETIME) AS valid_to
+  FROM (
+    SELECT * FROM NEW_ROWS
+    UNION ALL
+    SELECT * FROM CHANGED_ROWS
+  ) s
+)
+
+SELECT * FROM CLOSE_OLD
+UNION ALL
+SELECT * FROM INSERT_NEW
+
+`, `
+
+-- INITIAL LOAD
+
+WITH S AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key
+  FROM ${ref("external_staging_bitrix24_deals")} s
+)
+
+SELECT
+  s.*,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S s
+
+`)}
