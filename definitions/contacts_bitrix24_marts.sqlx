@@ -1,0 +1,168 @@
+config {
+  type: "table",
+  schema: "gal_bitrix24",
+  name: "contacts_bitrix24_marts",
+  tags: ["bitrix24_contacts", "bitrix24", "contacts", "marts", "phone_normalization"],
+  description: "Mart по контактам Bitrix24: берём is_current=TRUE из history, нормализуем телефоны, выбираем primary_phone и сохраняем массив E.164.",
+  columns: {
+    ID: "Уникальный идентификатор контакта в Bitrix24.",
+    DATE_CREATE: "Дата и время создания контакта в Bitrix24.",
+    SOURCE_ID: "Идентификатор источника контакта.",
+    ASSIGNED_BY_ID: "ID ответственного менеджера.",
+    HONORIFIC: "Обращение к контакту.",
+    NAME: "Имя контакта.",
+    SECOND_NAME: "Отчество контакта.",
+    LAST_NAME: "Фамилия контакта.",
+    COMPANY_ID: "ID компании.",
+    BIRTHDATE: "Дата рождения.",
+    SOURCE_DESCRIPTION: "Описание источника.",
+    POST: "Должность.",
+    COMMENTS: "Комментарий.",
+    HAS_PHONE: "Есть ли телефон.",
+    HAS_EMAIL: "Есть ли email.",
+    HAS_IMOL: "Есть ли IMOL.",
+    CREATED_BY_ID: "Кто создал.",
+    MODIFY_BY_ID: "Кто изменил.",
+    DATE_MODIFY: "Дата изменения.",
+    ORIGINATOR_ID: "Внешняя система.",
+    ORIGIN_ID: "Внешний ID.",
+    ORIGIN_VERSION: "Версия внешних данных.",
+
+    ADDRESS: "Основной адрес.",
+    ADDRESS_2: "Дополнительная строка адреса.",
+    ADDRESS_CITY: "Город.",
+    ADDRESS_POSTAL_CODE: "Почтовый индекс.",
+    ADDRESS_REGION: "Регион.",
+    ADDRESS_PROVINCE: "Область.",
+    ADDRESS_COUNTRY: "Страна.",
+    ADDRESS_LOC_ADDR_ID: "ID адреса Bitrix.",
+
+    UTM_SOURCE: "UTM Source.",
+    UTM_MEDIUM: "UTM Medium.",
+    UTM_CAMPAIGN: "UTM Campaign.",
+    UTM_CONTENT: "UTM Content.",
+    UTM_TERM: "UTM Term.",
+
+    LAST_COMMUNICATION_TIME: "Последняя коммуникация.",
+    LAST_ACTIVITY_BY: "Кто выполнил активность.",
+    LAST_ACTIVITY_TIME: "Когда была активность.",
+
+    LEAD_ID: "Связанный лид.",
+    OPENED: "Открыт ли контакт.",
+    TYPE_ID: "Тип контакта.",
+    EXPORT: "Признак экспорта.",
+    FACE_ID: "ID Face-фото.",
+
+    UF_CRM_RS_UTM_SOURCE: "RS UTM Source.",
+    UF_CRM_RS_UTM_MEDIUM: "RS UTM Medium.",
+    UF_CRM_RS_UTM_CAMP: "RS UTM Campaign.",
+    UF_CRM_RS_UTM_TERM: "RS UTM Term.",
+    UF_CRM_RS_UTM_CONT: "RS UTM Content.",
+    UF_CRM_RS_GOOGLE_CID: "Google Client ID.",
+
+    is_current: "Актуальная версия (SCD2).",
+    valid_from: "Начало версии.",
+    valid_to: "Конец версии.",
+    surrogate_key: "Суррогатный ключ.",
+
+    phone_value_raw: "Исходный телефон.",
+    phone_value: "Основной телефон (pretty).",
+    phone_value_e164: "Основной телефон (E.164).",
+    phone_values_e164: "Все телефоны (E.164).",
+
+    email_value: "Email.",
+    photo_downloadUrl: "URL скачивания фото.",
+    photo_id: "ID фото.",
+    photo_showUrl: "URL просмотра фото."
+  }
+}
+
+WITH base AS (
+  SELECT *
+  FROM ${ref("history_bitrix24_contacts")}
+  WHERE is_current = TRUE
+),
+
+src AS (
+  SELECT
+    b.*,
+    CAST(b.phone_value AS STRING) AS phone_value_raw
+  FROM base b
+),
+
+chunks AS (
+  SELECT
+    s.*,
+    ARRAY(
+      SELECT AS STRUCT x AS chunk, off
+      FROM UNNEST(
+        REGEXP_EXTRACT_ALL(
+          s.phone_value_raw,
+          r'(\+?\d[\d\-\(\)\s]{6,}\d|\b\d{6}\b)'
+        )
+      ) AS x WITH OFFSET AS off
+    ) AS phone_chunks
+  FROM src s
+),
+
+normalized AS (
+  SELECT
+    c.*,
+    ARRAY(
+      SELECT AS STRUCT
+        CONCAT('+', d.norm) AS phone_value_e164,
+        d.off
+      FROM (
+        SELECT
+          off,
+          CASE
+            WHEN LENGTH(raw)=6 THEN CONCAT('77172', raw)
+            WHEN LENGTH(raw)=10 THEN CONCAT('7', raw)
+            WHEN LENGTH(raw)=11 AND STARTS_WITH(raw,'8') THEN CONCAT('7', SUBSTR(raw,2))
+            WHEN LENGTH(raw) IN (11,12) AND STARTS_WITH(raw,'7') THEN raw
+            ELSE NULL
+          END AS norm
+        FROM (
+          SELECT off, REGEXP_REPLACE(chunk, r'\D', '') AS raw
+          FROM UNNEST(c.phone_chunks)
+        )
+      ) d
+      WHERE d.norm IS NOT NULL
+    ) AS phones_norm
+  FROM chunks c
+),
+
+picked AS (
+  SELECT
+    n.*,
+    (SELECT x.phone_value_e164 FROM UNNEST(n.phones_norm) x ORDER BY x.off LIMIT 1) AS phone_value_e164
+  FROM normalized n
+)
+
+SELECT
+  ID, DATE_CREATE, SOURCE_ID, ASSIGNED_BY_ID, HONORIFIC, NAME, SECOND_NAME, LAST_NAME,
+  COMPANY_ID, BIRTHDATE, SOURCE_DESCRIPTION, POST, COMMENTS,
+  HAS_PHONE, HAS_EMAIL, HAS_IMOL, CREATED_BY_ID, MODIFY_BY_ID, DATE_MODIFY,
+  ORIGINATOR_ID, ORIGIN_ID, ORIGIN_VERSION,
+
+  ADDRESS, ADDRESS_2, ADDRESS_CITY, ADDRESS_POSTAL_CODE,
+  ADDRESS_REGION, ADDRESS_PROVINCE, ADDRESS_COUNTRY, ADDRESS_LOC_ADDR_ID,
+
+  UTM_SOURCE, UTM_MEDIUM, UTM_CAMPAIGN, UTM_CONTENT, UTM_TERM,
+  LAST_COMMUNICATION_TIME, LAST_ACTIVITY_BY, LAST_ACTIVITY_TIME,
+  LEAD_ID, OPENED, TYPE_ID, EXPORT, FACE_ID,
+
+  UF_CRM_RS_UTM_SOURCE, UF_CRM_RS_UTM_MEDIUM, UF_CRM_RS_UTM_CAMP,
+  UF_CRM_RS_UTM_TERM, UF_CRM_RS_UTM_CONT, UF_CRM_RS_GOOGLE_CID,
+
+  is_current, valid_from, valid_to, surrogate_key,
+
+  phone_value_raw,
+  phone_value_e164,
+  phones_norm AS phone_values_e164,
+
+  email_value,
+  PHOTO.downloadUrl AS photo_downloadUrl,
+  PHOTO.id          AS photo_id,
+  PHOTO.showUrl     AS photo_showUrl
+FROM picked
