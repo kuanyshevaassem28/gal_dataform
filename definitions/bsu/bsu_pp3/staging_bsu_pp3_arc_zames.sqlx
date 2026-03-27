@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  schema: "gal_bsu_pp3",
+  name: "staging_bsu_pp3_arc_zames",
+  tags: ["bsu_pp3_arc_zames", "bsu_pp3", "arc_zames", "staging"],
+  description: "BSU PP3 ARC_ZAMES: нормализация типов + SK=SHA256(ID) + дедуп по SK."
+}
+
+WITH src AS (
+  SELECT
+    ID, ZAKASID, ZAMNUM, ZAMVOL, ZAMHUMID, ZAMHUMEND, ZAMTEMP,
+    COALESCE(TIMESTAMP_MICROS(DIV(ZAMSTARTTIME, 1000)), CURRENT_TIMESTAMP()) AS ZAMSTARTTIME,
+    COALESCE(TIMESTAMP_MICROS(DIV(ZAMSTUNLTIME, 1000)), CURRENT_TIMESTAMP()) AS ZAMSTUNLTIME,
+    COALESCE(TIMESTAMP_MICROS(DIV(ZAMENDTIME,   1000)), CURRENT_TIMESTAMP()) AS ZAMENDTIME,
+    ZAMCHIEFNAME,
+    COALESCE(ZAMSTATUS, 0) AS ZAMSTATUS,
+    ZAMVYT1, ZAMVYT2, ZAMVYT3, ZAMVYT4, ZAMWZ
+  FROM ${ref("external_staging_bsu_pp3_arc_zames")}
+),
+
+enriched AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(CAST(s.ID AS STRING))) AS surrogate_key
+  FROM src s
+)
+
+SELECT *
+FROM enriched
