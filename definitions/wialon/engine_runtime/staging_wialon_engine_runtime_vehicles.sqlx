@@ -1,0 +1,75 @@
+config {
+  type: "table",
+  schema: "gal_wialon",
+  name: "staging_wialon_engine_runtime_vehicles",
+  tags: ["wialon_engine_runtime_vehicles", "wialon", "engine_runtime", "staging"],
+  description: "Wialon Engine Runtime — подготовленный уровень по ТС (level=2, джойн с level=1 по дате).",
+
+  columns: {
+    number:           "Номер строки отчёта (level=2)",
+    date:             "Дата отчёта (из строки level=1)",
+    name:             "Название ТС/объекта",
+    engine_time_sec:  "Двигатель работал, сек (engine_time H:MM:SS → секунды)",
+    moving_time_sec:  "Время движения, сек (moving_time H:MM:SS → секунды)",
+    idle_time_sec:    "Холостой ход, сек (idle_time H:MM:SS → секунды)",
+    start_type:       "Тип начала периода (start_time из отчёта)",
+    start_pos:        "Стартовая позиция (адрес/координаты)",
+    end_type:         "Тип окончания периода (end_time из отчёта)",
+    end_pos:          "Финишная позиция (адрес/координаты)",
+    _ingested_at:     "Метка времени загрузки сырого отчёта из Wialon"
+  }
+}
+
+WITH joined AS (
+  SELECT
+    t2.number,  
+    t1.date, 
+    t2.name,
+    t2.engine_time,
+    t2.moving_time,
+    t2.idle_time,
+    t2.start_time AS start_type,
+    t2.start_pos,
+    t2.end_time   AS end_type,   
+    t2.end_pos,  	
+    t2._ingested_at
+  FROM `galery-22579.gal_wialon.external_staging_wialon_engine_runtime` AS t2 
+  JOIN `galery-22579.gal_wialon.external_staging_wialon_engine_runtime` AS t1
+    ON t1.number       = t2.parent_number
+   AND t1._ingested_at = t2._ingested_at
+  WHERE t2.level = 2
+    AND t1.level = 1
+)
+
+SELECT
+  number,
+  date,
+  name,
+
+  -- engine_time (H:MM:SS) → секунды
+  (
+    SAFE_CAST(SPLIT(engine_time, ':')[OFFSET(0)] AS INT64) * 3600 +
+    SAFE_CAST(SPLIT(engine_time, ':')[OFFSET(1)] AS INT64) * 60  +
+    SAFE_CAST(SPLIT(engine_time,  ':')[OFFSET(2)] AS INT64)
+  ) AS engine_time_sec,
+
+  -- moving_time (H:MM:SS) → секунды
+  (
+    SAFE_CAST(SPLIT(moving_time, ':')[OFFSET(0)] AS INT64) * 3600 +
+    SAFE_CAST(SPLIT(moving_time, ':')[OFFSET(1)] AS INT64) * 60  +
+    SAFE_CAST(SPLIT(moving_time, ':')[OFFSET(2)] AS INT64)
+  ) AS moving_time_sec,
+
+  -- idle_time (H:MM:SS) → секунды
+  (
+    SAFE_CAST(SPLIT(idle_time, ':')[OFFSET(0)] AS INT64) * 3600 +
+    SAFE_CAST(SPLIT(idle_time, ':')[OFFSET(1)] AS INT64) * 60  +
+    SAFE_CAST(SPLIT(idle_time, ':')[OFFSET(2)] AS INT64)
+  ) AS idle_time_sec,
+
+  start_type,
+  start_pos,
+  end_type,
+  end_pos,
+  _ingested_at
+FROM joined
