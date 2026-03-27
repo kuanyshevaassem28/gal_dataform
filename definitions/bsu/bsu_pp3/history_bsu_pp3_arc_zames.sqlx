@@ -1,0 +1,87 @@
+config {
+  type: "operations",
+  schema: "gal_bsu_pp3",
+  name: "history_bsu_pp3_arc_zames",
+  tags: ["bsu_pp3_arc_zames", "history", "scd2"]
+}
+
+UPDATE `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_zames` h
+SET
+  is_current = FALSE,
+  valid_to   = CURRENT_DATETIME('Asia/Almaty')
+WHERE
+  h.is_current = TRUE
+  AND EXISTS (
+    SELECT 1
+    FROM ${ref("staging_bsu_pp3_arc_zames")} s
+    WHERE
+      TO_HEX(SHA256(CAST(s.ID AS STRING))) = h.surrogate_key
+      AND (
+           s.ZAKASID      IS DISTINCT FROM h.ZAKASID
+        OR s.ZAMNUM       IS DISTINCT FROM h.ZAMNUM
+        OR s.ZAMVOL       IS DISTINCT FROM h.ZAMVOL
+        OR s.ZAMHUMID     IS DISTINCT FROM h.ZAMHUMID
+        OR s.ZAMHUMEND    IS DISTINCT FROM h.ZAMHUMEND
+        OR s.ZAMTEMP      IS DISTINCT FROM h.ZAMTEMP
+        OR s.ZAMSTARTTIME IS DISTINCT FROM h.ZAMSTARTTIME
+        OR s.ZAMSTUNLTIME IS DISTINCT FROM h.ZAMSTUNLTIME
+        OR s.ZAMENDTIME   IS DISTINCT FROM h.ZAMENDTIME
+        OR s.ZAMCHIEFNAME IS DISTINCT FROM h.ZAMCHIEFNAME
+        OR s.ZAMSTATUS    IS DISTINCT FROM h.ZAMSTATUS
+        OR s.ZAMVYT1      IS DISTINCT FROM h.ZAMVYT1
+        OR s.ZAMVYT2      IS DISTINCT FROM h.ZAMVYT2
+        OR s.ZAMVYT3      IS DISTINCT FROM h.ZAMVYT3
+        OR s.ZAMVYT4      IS DISTINCT FROM h.ZAMVYT4
+        OR s.ZAMWZ        IS DISTINCT FROM h.ZAMWZ
+      )
+  );
+
+-- ШАГ 2. Вставляем:
+--  • новые ID
+--  • изменённые ID (у которых мы только что закрыли текущую версию)
+
+INSERT INTO `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_zames` (
+  ID, ZAKASID, ZAMNUM, ZAMVOL,
+  ZAMHUMID, ZAMHUMEND, ZAMTEMP,
+  ZAMSTARTTIME, ZAMSTUNLTIME, ZAMENDTIME,
+  ZAMCHIEFNAME, ZAMSTATUS,
+  ZAMVYT1, ZAMVYT2, ZAMVYT3, ZAMVYT4, ZAMWZ,
+  surrogate_key,
+  is_current,
+  valid_from,
+  valid_to
+)
+SELECT
+  s.ID, s.ZAKASID, s.ZAMNUM, s.ZAMVOL,
+  s.ZAMHUMID, s.ZAMHUMEND, s.ZAMTEMP,
+  s.ZAMSTARTTIME, s.ZAMSTUNLTIME, s.ZAMENDTIME,
+  s.ZAMCHIEFNAME, s.ZAMSTATUS,
+  s.ZAMVYT1, s.ZAMVYT2, s.ZAMVYT3, s.ZAMVYT4, s.ZAMWZ,
+  TO_HEX(SHA256(CAST(s.ID AS STRING))) AS surrogate_key,
+  TRUE,
+  CURRENT_DATETIME('Asia/Almaty'),
+  NULL
+FROM ${ref("staging_bsu_pp3_arc_zames")} s
+LEFT JOIN `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_zames` h
+  ON h.surrogate_key = TO_HEX(SHA256(CAST(s.ID AS STRING)))
+  AND h.is_current = TRUE
+WHERE
+  h.surrogate_key IS NULL
+  OR (
+       s.ZAKASID      IS DISTINCT FROM h.ZAKASID
+    OR s.ZAMNUM       IS DISTINCT FROM h.ZAMNUM
+    OR s.ZAMVOL       IS DISTINCT FROM h.ZAMVOL
+    OR s.ZAMHUMID     IS DISTINCT FROM h.ZAMHUMID
+    OR s.ZAMHUMEND    IS DISTINCT FROM h.ZAMHUMEND
+    OR s.ZAMTEMP      IS DISTINCT FROM h.ZAMTEMP
+    OR s.ZAMSTARTTIME IS DISTINCT FROM h.ZAMSTARTTIME
+    OR s.ZAMSTUNLTIME IS DISTINCT FROM h.ZAMSTUNLTIME
+    OR s.ZAMENDTIME   IS DISTINCT FROM h.ZAMENDTIME
+    OR s.ZAMCHIEFNAME IS DISTINCT FROM h.ZAMCHIEFNAME
+    OR s.ZAMSTATUS    IS DISTINCT FROM h.ZAMSTATUS
+    OR s.ZAMVYT1      IS DISTINCT FROM h.ZAMVYT1
+    OR s.ZAMVYT2      IS DISTINCT FROM h.ZAMVYT2
+    OR s.ZAMVYT3      IS DISTINCT FROM h.ZAMVYT3
+    OR s.ZAMVYT4      IS DISTINCT FROM h.ZAMVYT4
+    OR s.ZAMWZ        IS DISTINCT FROM h.ZAMWZ
+     )
