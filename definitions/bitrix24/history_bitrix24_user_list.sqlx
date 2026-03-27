@@ -1,0 +1,206 @@
+config {
+  type: "incremental",
+  schema: "gal_bitrix24",
+  name: "history_bitrix24_user_list",
+  tags: ["bitrix24_user_list", "bitrix24", "user_list", "history", "scd2"],
+  description: "SCD-2 история пользователей Bitrix24 по surrogate_key = SHA256(ID)",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(incremental(), `
+
+WITH
+
+S AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key
+  FROM ${ref("external_staging_bitrix24_user_list")} s
+),
+
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+DIFF AS (
+  SELECT
+    s.*,
+    h.valid_from AS h_valid_from,
+
+    h.surrogate_key IS NULL AS is_new,
+
+    (
+      h.surrogate_key IS NOT NULL AND (
+           h.XML_ID               IS DISTINCT FROM s.XML_ID
+        OR h.ACTIVE               IS DISTINCT FROM s.ACTIVE
+        OR h.NAME                 IS DISTINCT FROM s.NAME
+        OR h.LAST_NAME            IS DISTINCT FROM s.LAST_NAME
+        OR h.SECOND_NAME          IS DISTINCT FROM s.SECOND_NAME
+        OR h.EMAIL                IS DISTINCT FROM s.EMAIL
+        OR h.LAST_LOGIN           IS DISTINCT FROM s.LAST_LOGIN
+        OR h.DATE_REGISTER        IS DISTINCT FROM s.DATE_REGISTER
+        OR h.IS_ONLINE            IS DISTINCT FROM s.IS_ONLINE
+        OR h.TIMESTAMP_X          IS DISTINCT FROM s.TIMESTAMP_X
+        OR h.LAST_ACTIVITY_DATE   IS DISTINCT FROM s.LAST_ACTIVITY_DATE
+        OR h.PERSONAL_GENDER      IS DISTINCT FROM s.PERSONAL_GENDER
+        OR h.PERSONAL_WWW         IS DISTINCT FROM s.PERSONAL_WWW
+        OR h.PERSONAL_BIRTHDAY    IS DISTINCT FROM s.PERSONAL_BIRTHDAY
+        OR h.PERSONAL_PHOTO       IS DISTINCT FROM s.PERSONAL_PHOTO
+        OR h.PERSONAL_PHONE       IS DISTINCT FROM s.PERSONAL_PHONE
+        OR h.PERSONAL_MOBILE      IS DISTINCT FROM s.PERSONAL_MOBILE
+        OR h.WORK_PHONE           IS DISTINCT FROM s.WORK_PHONE
+        OR h.WORK_POSITION        IS DISTINCT FROM s.WORK_POSITION
+        OR h.UF_EMPLOYMENT_DATE   IS DISTINCT FROM s.UF_EMPLOYMENT_DATE
+        OR TO_JSON_STRING(h.UF_DEPARTMENT)
+           IS DISTINCT FROM TO_JSON_STRING(s.UF_DEPARTMENT)
+        OR h.UF_PHONE_INNER       IS DISTINCT FROM s.UF_PHONE_INNER
+        OR h.USER_TYPE            IS DISTINCT FROM s.USER_TYPE
+        OR h.TIME_ZONE            IS DISTINCT FROM s.TIME_ZONE
+        OR h.PERSONAL_CITY        IS DISTINCT FROM s.PERSONAL_CITY
+        OR h.UF_ZOOM              IS DISTINCT FROM s.UF_ZOOM
+        OR h.UF_USR_1736506102090 IS DISTINCT FROM s.UF_USR_1736506102090
+      )
+    ) AS is_changed
+
+  FROM S s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+),
+
+TO_CLOSE AS (
+  SELECT h.*
+  FROM H_CUR h
+  JOIN DIFF d
+    ON d.surrogate_key = h.surrogate_key
+  WHERE d.is_changed = TRUE
+),
+
+TO_INSERT AS (
+  SELECT *
+  FROM DIFF
+  WHERE is_new = TRUE OR is_changed = TRUE
+)
+
+SELECT
+  i.ID,
+  i.XML_ID,
+  i.ACTIVE,
+  i.NAME,
+  i.LAST_NAME,
+  i.SECOND_NAME,
+  i.EMAIL,
+  i.LAST_LOGIN,
+  i.DATE_REGISTER,
+  i.IS_ONLINE,
+  i.TIMESTAMP_X,
+  i.LAST_ACTIVITY_DATE,
+  i.PERSONAL_GENDER,
+  i.PERSONAL_WWW,
+  i.PERSONAL_BIRTHDAY,
+  i.PERSONAL_PHOTO,
+  i.PERSONAL_PHONE,
+  i.PERSONAL_MOBILE,
+  i.WORK_PHONE,
+  i.WORK_POSITION,
+  i.UF_EMPLOYMENT_DATE,
+  i.UF_DEPARTMENT,
+  i.UF_PHONE_INNER,
+  i.USER_TYPE,
+  i.TIME_ZONE,
+  i.PERSONAL_CITY,
+  i.UF_ZOOM,
+  i.UF_USR_1736506102090,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  i.surrogate_key
+
+FROM TO_INSERT i
+
+UNION ALL
+
+-- 🔹 Закрытые старые версии
+SELECT
+  h.ID,
+  h.XML_ID,
+  h.ACTIVE,
+  h.NAME,
+  h.LAST_NAME,
+  h.SECOND_NAME,
+  h.EMAIL,
+  h.LAST_LOGIN,
+  h.DATE_REGISTER,
+  h.IS_ONLINE,
+  h.TIMESTAMP_X,
+  h.LAST_ACTIVITY_DATE,
+  h.PERSONAL_GENDER,
+  h.PERSONAL_WWW,
+  h.PERSONAL_BIRTHDAY,
+  h.PERSONAL_PHOTO,
+  h.PERSONAL_PHONE,
+  h.PERSONAL_MOBILE,
+  h.WORK_PHONE,
+  h.WORK_POSITION,
+  h.UF_EMPLOYMENT_DATE,
+  h.UF_DEPARTMENT,
+  h.UF_PHONE_INNER,
+  h.USER_TYPE,
+  h.TIME_ZONE,
+  h.PERSONAL_CITY,
+  h.UF_ZOOM,
+  h.UF_USR_1736506102090,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to,
+  h.surrogate_key
+
+FROM TO_CLOSE h
+
+`, `
+
+WITH S AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key
+  FROM ${ref("external_staging_bitrix24_user_list")} s
+)
+
+SELECT
+  s.ID,
+  s.XML_ID,
+  s.ACTIVE,
+  s.NAME,
+  s.LAST_NAME,
+  s.SECOND_NAME,
+  s.EMAIL,
+  s.LAST_LOGIN,
+  s.DATE_REGISTER,
+  s.IS_ONLINE,
+  s.TIMESTAMP_X,
+  s.LAST_ACTIVITY_DATE,
+  s.PERSONAL_GENDER,
+  s.PERSONAL_WWW,
+  s.PERSONAL_BIRTHDAY,
+  s.PERSONAL_PHOTO,
+  s.PERSONAL_PHONE,
+  s.PERSONAL_MOBILE,
+  s.WORK_PHONE,
+  s.WORK_POSITION,
+  s.UF_EMPLOYMENT_DATE,
+  s.UF_DEPARTMENT,
+  s.UF_PHONE_INNER,
+  s.USER_TYPE,
+  s.TIME_ZONE,
+  s.PERSONAL_CITY,
+  s.UF_ZOOM,
+  s.UF_USR_1736506102090,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  s.surrogate_key
+
+FROM S s
+
+`)}
