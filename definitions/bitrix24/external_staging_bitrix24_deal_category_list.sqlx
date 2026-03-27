@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_bitrix24",
+  name: "external_staging_bitrix24_deal_category_list"
+}
