@@ -1,0 +1,400 @@
+config {
+  type: "table",
+  schema: "gal_acs",
+  name: "acs_entry_exit_pp2_marts2",
+  tags: ["acs_entry_exit_pp2", "entry_exit_pp2", "acs_entry_exit_pp3", "entry_exit_pp3", "acs", "entry_exit", "pp2", "pp3", "mart"],
+  description: "Сводный март по проходам ПП2 и ПП3 с определением смены, опозданий, ранних уходов и нарушителей."
+}
+
+WITH all_events AS (
+  SELECT
+    surrogate_key,
+    employee_name,
+    company,
+    department,
+    event_date,
+    event_time,
+    event_type,
+    access_zone,
+    door,
+    key_code,
+    CAST(valid_from AS DATETIME) AS valid_from,
+    CAST(valid_to   AS DATETIME) AS valid_to,
+    is_current,
+    'ПП2' AS plant
+  FROM ${ref("history_acs_entry_exit_pp2")}
+
+  UNION ALL
+
+  SELECT
+    surrogate_key,
+    employee_name,
+    company,
+    department,
+    event_date,
+    event_time,
+    event_type,
+    access_zone,
+    door,
+    key_code,
+    CAST(valid_from AS DATETIME) AS valid_from,
+    CAST(valid_to   AS DATETIME) AS valid_to,
+    is_current,
+    'ПП3' AS plant
+  FROM ${ref("history_acs_entry_exit_pp3")}
+),
+
+all_dates AS (
+  SELECT DISTINCT event_date FROM all_events
+),
+
+date_pairs AS (
+  SELECT 
+    d1.event_date AS date1,
+    DATE_ADD(d1.event_date, INTERVAL 1 DAY) AS date2
+  FROM all_dates d1
+),
+
+access_events AS (
+  SELECT
+    employee_name, company, department, plant,
+    event_date, event_time,
+    CASE 
+      WHEN access_zone = 'Территория ПП3' THEN 'Вход на предприятие'
+      ELSE access_zone
+    END AS access_zone,
+    event_type
+  FROM all_events
+  WHERE event_type = 'Проход'
+    AND access_zone IN ('Территория ПП3', 'Вход на предприятие', 'Внешний мир')
+),
+
+grouped_events AS (
+  SELECT
+    employee_name, company, department, plant, event_date,
+    ARRAY_AGG(
+      STRUCT(
+        access_zone,
+        event_time,
+        event_date
+      )
+      ORDER BY event_time
+    ) AS event_sequence
+  FROM access_events
+  GROUP BY employee_name, company, department, plant, event_date
+),
+
+combined_events AS (
+  SELECT 
+    p.date1,
+    p.date2,
+    g.employee_name,
+    g.company,
+    g.department,
+    g.plant,
+    ARRAY_CONCAT_AGG(
+      ARRAY(
+        SELECT STRUCT(
+          e.access_zone,
+          e.event_time,
+          e.event_date,
+          CASE WHEN e.event_date = p.date1 THEN 'D1' ELSE 'D2' END AS event_day
+        )
+        FROM UNNEST(g.event_sequence) AS e
+      )
+    ) AS full_event_sequence
+  FROM date_pairs p
+  LEFT JOIN grouped_events g
+    ON g.event_date IN (p.date1, p.date2)
+  GROUP BY
+    p.date1,
+    p.date2,
+    g.employee_name,
+    g.company,
+    g.department,
+    g.plant
+),
+
+filtered_combined AS (
+  SELECT *
+  FROM combined_events
+  WHERE EXISTS (
+    SELECT 1
+    FROM UNNEST(full_event_sequence) AS e
+    WHERE e.event_day = 'D1'
+  )
+),
+
+flags_and_shift AS (
+  SELECT
+    *,
+    IF(
+      EXISTS (
+        SELECT 1
+        FROM UNNEST(full_event_sequence) e
+        WHERE e.event_day = 'D1'
+          AND e.access_zone = 'Вход на предприятие'
+          AND e.event_time BETWEEN TIME '18:00:00' AND TIME '21:00:00'
+      ),
+      1,
+      0
+    ) AS has_evening_entry,
+    IF(
+      EXISTS (
+        SELECT 1
+        FROM UNNEST(full_event_sequence) e
+        WHERE e.event_day = 'D2'
+          AND e.access_zone = 'Внешний мир'
+          AND e.event_time BETWEEN TIME '06:00:00' AND TIME '09:00:00'
+      ),
+      1,
+      0
+    ) AS has_morning_exit,
+    IF(
+      (
+        SELECT e.access_zone
+        FROM UNNEST(full_event_sequence) e
+        WHERE e.event_day = 'D1'
+        ORDER BY e.event_time DESC
+        LIMIT 1
+      ) = 'Вход на предприятие',
+      1,
+      0
+    ) AS was_on_site_night,
+    IF((
+      (
+        SELECT IF(
+          COUNTIF(e1.event_time IS NOT NULL) = 0,
+          FALSE,
+          IF((
+            SELECT COUNT(*)
+            FROM (
+              SELECT e2.*
+              FROM (
+                SELECT e1.event_time
+                FROM UNNEST(full_event_sequence) AS e1
+                WHERE e1.event_day = 'D1'
+                  AND e1.access_zone = 'Внешний мир'
+                  AND e1.event_time < TIME '12:00:00'
+                ORDER BY e1.event_time DESC
+                LIMIT 1
+              ) last_exit
+              JOIN UNNEST(full_event_sequence) AS e2
+                ON e2.event_day = 'D1'
+               AND e2.access_zone = 'Вход на предприятие'
+               AND e2.event_time > last_exit.event_time
+               AND e2.event_time < TIME '16:00:00'
+            )
+          ) = 0, TRUE, FALSE)
+        )
+        FROM UNNEST(full_event_sequence) AS e1
+        WHERE e1.event_day = 'D1'
+          AND e1.access_zone = 'Внешний мир'
+          AND e1.event_time < TIME '12:00:00'
+      )
+      OR
+      (
+        SELECT COUNT(*)
+        FROM UNNEST(full_event_sequence) AS e
+        WHERE e.event_day = 'D1'
+          AND e.event_time < TIME '16:00:00'
+          AND e.access_zone IN ('Вход на предприятие', 'Внешний мир')
+      ) = 0
+    ), 1, 0) AS was_not_on_site_day
+  FROM filtered_combined
+),
+
+with_shift AS (
+  SELECT
+    *,
+    (has_evening_entry + has_morning_exit + was_on_site_night + was_not_on_site_day) AS flag_sum,
+    IF(
+      (has_evening_entry + has_morning_exit + was_on_site_night + was_not_on_site_day) >= 3,
+      'Ночная',
+      'Дневная'
+    ) AS shift
+  FROM flags_and_shift
+),
+
+filtered_events AS (
+  SELECT
+    *,
+    ARRAY(
+      SELECT e
+      FROM UNNEST(full_event_sequence) AS e
+      WHERE
+        (shift = 'Дневная' AND e.event_day = 'D1')
+        OR (
+          shift = 'Ночная'
+          AND (
+            (e.event_day = 'D1' AND e.event_time >= TIME '18:00:00')
+            OR e.event_day = 'D2'
+          )
+        )
+    ) AS relevant_events
+  FROM with_shift
+),
+
+with_offsite AS (
+  SELECT
+    *,
+    ARRAY(
+      SELECT AS STRUCT
+        e.*,
+        LEAD(e.event_time) OVER (ORDER BY e.event_date, e.event_time) AS next_event_time
+      FROM UNNEST(relevant_events) AS e
+    ) AS sequenced_events
+  FROM filtered_events
+),
+
+metrics AS (
+  SELECT
+    *,
+    (
+      SELECT CAST(MIN(e.event_time) AS STRING)
+      FROM UNNEST(sequenced_events) AS e
+      WHERE e.access_zone = 'Вход на предприятие'
+    ) AS first_entry_time,
+    (
+      SELECT CAST(MAX(e.event_time) AS STRING)
+      FROM UNNEST(sequenced_events) AS e
+      WHERE e.access_zone = 'Внешний мир'
+    ) AS last_exit_time,
+    (
+      SELECT STRING_AGG(
+        CASE
+          WHEN e.access_zone = 'Вход на предприятие'
+            THEN '🟢[' || e.event_day || ']' || CAST(e.event_time AS STRING)
+          WHEN e.access_zone = 'Внешний мир'
+            THEN '🟥[' || e.event_day || ']' || CAST(e.event_time AS STRING)
+        END,
+        ' - '
+        ORDER BY e.event_date, e.event_time
+      )
+      FROM UNNEST(sequenced_events) AS e
+    ) AS entry_exit_sequence,
+    SAFE_CAST(
+      NULLIF(
+        (
+          SELECT MIN(e.event_time)
+          FROM UNNEST(sequenced_events) AS e
+          WHERE e.access_zone = 'Вход на предприятие'
+        ),
+        NULL
+      ) AS TIME
+    ) AS entry_time,
+    SAFE_CAST(
+      NULLIF(
+        (
+          SELECT MAX(e.event_time)
+          FROM UNNEST(sequenced_events) AS e
+          WHERE e.access_zone = 'Внешний мир'
+        ),
+        NULL
+      ) AS TIME
+    ) AS exit_time,
+    DATETIME(
+      date1,
+      SAFE_CAST(
+        NULLIF(
+          (
+            SELECT MIN(e.event_time)
+            FROM UNNEST(sequenced_events) AS e
+            WHERE e.access_zone = 'Вход на предприятие'
+          ),
+          NULL
+        ) AS TIME
+      )
+    ) AS entry_dt,
+    DATETIME(
+      CASE
+        WHEN shift = 'Ночная'
+         AND SAFE_CAST(
+               NULLIF(
+                 (
+                   SELECT MAX(e.event_time)
+                   FROM UNNEST(sequenced_events) AS e
+                   WHERE e.access_zone = 'Внешний мир'
+                 ),
+                 NULL
+               ) AS TIME
+             )
+             < SAFE_CAST(
+                 NULLIF(
+                   (
+                     SELECT MIN(e.event_time)
+                     FROM UNNEST(sequenced_events) AS e
+                     WHERE e.access_zone = 'Вход на предприятие'
+                   ),
+                   NULL
+                 ) AS TIME
+               )
+        THEN DATE_ADD(date1, INTERVAL 1 DAY)
+        ELSE date1
+      END,
+      SAFE_CAST(
+        NULLIF(
+          (
+            SELECT MAX(e.event_time)
+            FROM UNNEST(sequenced_events) AS e
+            WHERE e.access_zone = 'Внешний мир'
+          ),
+          NULL
+        ) AS TIME
+      )
+    ) AS exit_dt,
+    (
+      SELECT SUM(TIME_DIFF(e.next_event_time, e.event_time, SECOND))
+      FROM UNNEST(sequenced_events) AS e
+      WHERE e.access_zone = 'Внешний мир'
+        AND e.next_event_time IS NOT NULL
+    ) AS time_off_site
+  FROM with_offsite
+)
+
+SELECT
+  employee_name,
+  company,
+  department,
+  plant,
+  date1 AS event_date,
+  shift,
+  first_entry_time,
+  last_exit_time,
+  entry_exit_sequence,
+  time_off_site,
+  COALESCE(
+    DATETIME_DIFF(exit_dt, entry_dt, SECOND) - COALESCE(time_off_site, 0),
+    0
+  ) AS total_time_on_site,
+  CASE
+    WHEN shift = 'Дневная' AND entry_time > TIME '08:30:00' THEN 'Да'
+    WHEN shift = 'Ночная' AND entry_time > TIME '20:30:00' THEN 'Да'
+    ELSE 'Нет'
+  END AS is_late,
+  CASE
+    WHEN shift = 'Дневная' AND exit_time < TIME '19:30:00' THEN 'Да'
+    WHEN shift = 'Ночная' AND exit_time < TIME '07:30:00' THEN 'Да'
+    ELSE 'Нет'
+  END AS left_early,
+  CASE
+    WHEN COALESCE(
+      DATETIME_DIFF(exit_dt, entry_dt, SECOND) - time_off_site,
+      0
+    ) < 39600 THEN 'Да'
+    ELSE 'Нет'
+  END AS worked_less_than_11h,
+  CASE
+    WHEN (
+      (shift = 'Дневная' AND entry_time > TIME '08:30:00') OR
+      (shift = 'Ночная' AND entry_time > TIME '20:30:00') OR
+      (shift = 'Дневная' AND exit_time < TIME '19:30:00') OR
+      (shift = 'Ночная' AND exit_time < TIME '07:30:00') OR
+      first_entry_time IS NULL OR
+      last_exit_time  IS NULL OR
+      time_off_site   > 4500
+    )
+      THEN 'Да'
+    ELSE 'Нет'
+  END AS violator
+FROM metrics
