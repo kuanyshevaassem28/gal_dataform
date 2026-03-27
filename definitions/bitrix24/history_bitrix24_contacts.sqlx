@@ -1,0 +1,241 @@
+config {
+  type: "operations",
+  schema: "gal_bitrix24",
+  name: "history_bitrix24_contacts",
+  hasOutput: true,
+  tags: ["bitrix24_contacts", "bitrix24", "contacts", "history", "scd2"],
+  description: "SCD-2 история контактов Bitrix24 по surrogate_key = SHA256(ID) с is_current / valid_from / valid_to.", 
+  columns: {
+    ID: "ID контакта в Bitrix24",
+    DATE_CREATE: "Дата и время создания контакта",
+    SOURCE_ID: "ID источника контакта",
+    ASSIGNED_BY_ID: "ID ответственного менеджера",
+    HONORIFIC: "Обращение (г-н, г-жа и т.п.)",
+    NAME: "Имя контакта",
+    SECOND_NAME: "Отчество контакта",
+    LAST_NAME: "Фамилия контакта",
+    COMPANY_ID: "ID компании, к которой привязан контакт",
+    BIRTHDATE: "Дата рождения контакта",
+    SOURCE_DESCRIPTION: "Текстовое описание источника",
+    POST: "Должность контакта",
+    COMMENTS: "Комментарий к контакту",
+    HAS_PHONE: "Признак: есть ли телефон",
+    HAS_EMAIL: "Признак: есть ли email",
+    HAS_IMOL: "Признак: есть ли онлайн-чат (IMOL)",
+    CREATED_BY_ID: "ID пользователя, создавшего контакт",
+    MODIFY_BY_ID: "ID пользователя, последним изменившего контакт",
+    DATE_MODIFY: "Дата и время последнего изменения",
+    ORIGINATOR_ID: "ID интеграции-источника (если контакт из внешней системы)",
+    ORIGIN_ID: "Внешний ID контакта в системе-источнике",
+    ORIGIN_VERSION: "Версия записи из внешней системы",
+
+    ADDRESS: "Адрес (строка 1)",
+    ADDRESS_2: "Адрес (строка 2)",
+    ADDRESS_CITY: "Город",
+    ADDRESS_POSTAL_CODE: "Почтовый индекс",
+    ADDRESS_REGION: "Регион",
+    ADDRESS_PROVINCE: "Провинция/область",
+    ADDRESS_COUNTRY: "Страна",
+    ADDRESS_LOC_ADDR_ID: "ID локального адреса (справочник адресов Bitrix)",
+
+    UTM_SOURCE: "UTM Source контакта",
+    UTM_MEDIUM: "UTM Medium контакта",
+    UTM_CAMPAIGN: "UTM Campaign контакта",
+    UTM_CONTENT: "UTM Content контакта",
+    UTM_TERM: "UTM Term контакта",
+
+    LAST_COMMUNICATION_TIME: "Время последнего коммуникационного события",
+    LAST_ACTIVITY_BY: "ID пользователя последней активности",
+    LAST_ACTIVITY_TIME: "Время последней активности",
+
+    LEAD_ID: "ID лида, из которого был создан контакт",
+    OPENED: "Признак: контакт открыт для всех",
+    PHOTO: "Фото контакта (STRUCT: downloadUrl/id/showUrl)",
+    TYPE_ID: "Тип контакта",
+    EXPORT: "Признак разрешения на экспорт", 
+    FACE_ID:"FACE_ID",
+
+    UF_CRM_RS_UTM_SOURCE: "RS: UTM Source",
+    UF_CRM_RS_UTM_MEDIUM: "RS: UTM Medium",
+    UF_CRM_RS_UTM_CAMP: "RS: UTM Camp",
+    UF_CRM_RS_UTM_TERM: "RS: UTM Term",
+    UF_CRM_RS_UTM_CONT: "RS: UTM Content",
+    UF_CRM_RS_GOOGLE_CID: "RS: Google Client ID",
+
+    phone_value: "Номер телефона (первый/основной) из PHONE",
+    email_value: "Email (первый/основной) из EMAIL",
+
+    surrogate_key: "SCD-2 surrogate key = SHA256(ID)",
+    is_current: "Флаг актуальной версии записи",
+    valid_from: "Момент начала актуальности версии (Asia/Almaty)",
+    valid_to: "Момент окончания актуальности версии (NULL для текущей)"
+  }
+}
+
+BEGIN
+
+-- 1. staging без дедупликации
+CREATE TEMP TABLE stg_contacts AS
+SELECT
+  *,
+  TO_HEX(SHA256(COALESCE(SAFE_CAST(ID AS STRING), ''))) AS surrogate_key
+FROM ${ref("stg_bitrix24_contacts")};
+
+-- 2. закрытие текущих записей
+MERGE `galery-22579.gal_bitrix24.history_bitrix24_contacts` h
+USING stg_contacts s
+ON h.surrogate_key = s.surrogate_key
+AND h.is_current = TRUE
+
+WHEN MATCHED AND (
+     h.DATE_MODIFY IS DISTINCT FROM s.DATE_MODIFY
+  OR h.NAME IS DISTINCT FROM s.NAME
+  OR h.LAST_NAME IS DISTINCT FROM s.LAST_NAME
+  OR h.phone_value IS DISTINCT FROM s.phone_value
+  OR h.email_value IS DISTINCT FROM s.email_value
+)
+THEN UPDATE SET
+  is_current = FALSE,
+  valid_to   = CURRENT_DATETIME();
+
+-- 3. вставка новых
+INSERT INTO `galery-22579.gal_bitrix24.history_bitrix24_contacts` (
+  ID,
+  DATE_CREATE,
+  SOURCE_ID,
+  ASSIGNED_BY_ID,
+  HONORIFIC,
+  NAME,
+  SECOND_NAME,
+  LAST_NAME,
+  COMPANY_ID,
+  BIRTHDATE,
+  SOURCE_DESCRIPTION,
+  POST,
+  COMMENTS,
+  HAS_PHONE,
+  HAS_EMAIL,
+  HAS_IMOL,
+  CREATED_BY_ID,
+  MODIFY_BY_ID,
+  DATE_MODIFY,
+  ORIGINATOR_ID,
+  ORIGIN_ID,
+  ORIGIN_VERSION,
+  ADDRESS,
+  ADDRESS_2,
+  ADDRESS_CITY,
+  ADDRESS_POSTAL_CODE,
+  ADDRESS_REGION,
+  ADDRESS_PROVINCE,
+  ADDRESS_COUNTRY,
+  ADDRESS_LOC_ADDR_ID,
+  UTM_SOURCE,
+  UTM_MEDIUM,
+  UTM_CAMPAIGN,
+  UTM_CONTENT,
+  UTM_TERM,
+  LAST_COMMUNICATION_TIME,
+  LAST_ACTIVITY_BY,
+  LAST_ACTIVITY_TIME,
+  LEAD_ID,
+  OPENED,
+  PHOTO,
+  TYPE_ID,
+  EXPORT,
+  FACE_ID,
+  UF_CRM_RS_UTM_SOURCE,
+  UF_CRM_RS_UTM_MEDIUM,
+  UF_CRM_RS_UTM_CAMP,
+  UF_CRM_RS_UTM_TERM,
+  UF_CRM_RS_UTM_CONT,
+  UF_CRM_RS_GOOGLE_CID,
+  phone_value,
+  email_value,
+  surrogate_key,
+  is_current,
+  valid_from,
+  valid_to
+)
+SELECT
+  s.ID,
+  s.DATE_CREATE,
+  s.SOURCE_ID,
+  s.ASSIGNED_BY_ID,
+  s.HONORIFIC,
+  s.NAME,
+  s.SECOND_NAME,
+  s.LAST_NAME,
+  s.COMPANY_ID,
+  s.BIRTHDATE,
+  s.SOURCE_DESCRIPTION,
+  s.POST,
+  s.COMMENTS,
+  s.HAS_PHONE,
+  s.HAS_EMAIL,
+  s.HAS_IMOL,
+  s.CREATED_BY_ID,
+  s.MODIFY_BY_ID,
+  s.DATE_MODIFY,
+  s.ORIGINATOR_ID,
+  s.ORIGIN_ID,
+  s.ORIGIN_VERSION,
+  s.ADDRESS,
+  s.ADDRESS_2,
+  s.ADDRESS_CITY,
+  s.ADDRESS_POSTAL_CODE,
+  s.ADDRESS_REGION,
+  s.ADDRESS_PROVINCE,
+  s.ADDRESS_COUNTRY,
+  s.ADDRESS_LOC_ADDR_ID,
+  s.UTM_SOURCE,
+  s.UTM_MEDIUM,
+  s.UTM_CAMPAIGN,
+  s.UTM_CONTENT,
+  s.UTM_TERM,
+  s.LAST_COMMUNICATION_TIME,
+  s.LAST_ACTIVITY_BY,
+  s.LAST_ACTIVITY_TIME,
+  s.LEAD_ID,
+  s.OPENED,
+
+  STRUCT(
+    CAST(NULL AS STRING),
+    SAFE_CAST(s.PHOTO AS INT64),
+    CAST(NULL AS STRING)
+  ),
+
+  s.TYPE_ID,
+  s.EXPORT,
+  CAST(NULL AS INT64),
+
+  s.UF_CRM_RS_UTM_SOURCE,
+  s.UF_CRM_RS_UTM_MEDIUM,
+  s.UF_CRM_RS_UTM_CAMP,
+  s.UF_CRM_RS_UTM_TERM,
+  s.UF_CRM_RS_UTM_CONT,
+  s.UF_CRM_RS_GOOGLE_CID,
+
+  s.phone_value,
+  s.email_value,
+  s.surrogate_key,
+
+  TRUE,
+  CURRENT_DATETIME(),
+  NULL
+
+FROM stg_contacts s
+LEFT JOIN `galery-22579.gal_bitrix24.history_bitrix24_contacts` h
+  ON h.surrogate_key = s.surrogate_key
+ AND h.is_current = TRUE
+
+WHERE h.surrogate_key IS NULL
+   OR (
+        h.DATE_MODIFY IS DISTINCT FROM s.DATE_MODIFY
+     OR h.NAME IS DISTINCT FROM s.NAME
+     OR h.LAST_NAME IS DISTINCT FROM s.LAST_NAME
+     OR h.phone_value IS DISTINCT FROM s.phone_value
+     OR h.email_value IS DISTINCT FROM s.email_value
+   );
+
+END
