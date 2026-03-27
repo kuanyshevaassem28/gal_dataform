@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_wialon",
+  name: "external_staging_wialon_unit_group_stays"
+}
