@@ -1,0 +1,210 @@
+config {
+  type: "incremental",
+  schema: "gal_wialon",
+  name: "history_wialon_engine_runtime_vehicles",
+  tags: ["wialon_engine_runtime_vehicles", "wialon", "engine_runtime", "vehicles", "history", "scd2"],
+  description: "Wialon Engine Runtime Vehicles — SCD-2 история, surrogate_key = name|date.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    number:           "Номер строки отчёта (level=2)",
+    date:             "Дата отчёта (строка/дата из level=1)",
+    name:             "Название ТС/объекта",
+
+    engine_time_sec:  "Двигатель работал, сек",
+    moving_time_sec:  "Время движения, сек",
+    idle_time_sec:    "Холостой ход, сек",
+
+    start_type:       "Тип начала периода (из отчёта)",
+    start_pos:        "Стартовая позиция (адрес/координаты)",
+    end_type:         "Тип окончания периода (из отчёта)",
+    end_pos:          "Финишная позиция (адрес/координаты)",
+
+    _ingested_at:     "Время загрузки raw-отчёта",
+
+    surrogate_key:    "Суррогатный ключ: name|date",
+    valid_from:       "Начало действия версии записи",
+    valid_to:         "Конец действия версии записи",
+    is_current:       "Флаг актуальной версии (TRUE — текущая)"
+  }
+}
+ 
+
+${when(incremental(), ` 
+WITH S_SRC AS (
+  SELECT
+    number,
+    date,
+    name,
+    engine_time_sec,
+    moving_time_sec,
+    idle_time_sec,
+    start_type,
+    start_pos,
+    end_type,
+    end_pos,
+    _ingested_at
+  FROM ${ref("staging_wialon_engine_runtime_vehicles")}
+),
+
+S AS (
+  SELECT
+    s.*,
+ 
+    TO_HEX(
+      SHA256(
+        CONCAT(
+          COALESCE(name, ''), '|',
+          COALESCE(CAST(date AS STRING), '')
+        )
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+),
+ 
+H_CUR AS (
+  SELECT
+    surrogate_key,
+    number,
+    date,
+    name,
+    engine_time_sec,
+    moving_time_sec,
+    idle_time_sec,
+    start_type,
+    start_pos,
+    end_type,
+    end_pos,
+    _ingested_at,
+    valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL
+     OR (
+          h.number          IS DISTINCT FROM s.number
+       OR h.date            IS DISTINCT FROM s.date
+       OR h.name            IS DISTINCT FROM s.name
+       OR h.engine_time_sec IS DISTINCT FROM s.engine_time_sec
+       OR h.moving_time_sec IS DISTINCT FROM s.moving_time_sec
+       OR h.idle_time_sec   IS DISTINCT FROM s.idle_time_sec
+       OR h.start_type      IS DISTINCT FROM s.start_type
+       OR h.start_pos       IS DISTINCT FROM s.start_pos
+       OR h.end_type        IS DISTINCT FROM s.end_type
+       OR h.end_pos         IS DISTINCT FROM s.end_pos
+     )
+),
+ 
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM H_CUR h
+  JOIN S s USING (surrogate_key)
+  WHERE
+       h.number          IS DISTINCT FROM s.number
+    OR h.date            IS DISTINCT FROM s.date
+    OR h.name            IS DISTINCT FROM s.name
+    OR h.engine_time_sec IS DISTINCT FROM s.engine_time_sec
+    OR h.moving_time_sec IS DISTINCT FROM s.moving_time_sec
+    OR h.idle_time_sec   IS DISTINCT FROM s.idle_time_sec
+    OR h.start_type      IS DISTINCT FROM s.start_type
+    OR h.start_pos       IS DISTINCT FROM s.start_pos
+    OR h.end_type        IS DISTINCT FROM s.end_type
+    OR h.end_pos         IS DISTINCT FROM s.end_pos
+)
+ 
+SELECT
+  n.number,
+  n.date,
+  n.name,
+  n.engine_time_sec,
+  n.moving_time_sec,
+  n.idle_time_sec,
+  n.start_type,
+  n.start_pos,
+  n.end_type,
+  n.end_pos,
+  n._ingested_at,
+  n.surrogate_key,
+  TRUE        AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')        AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL 
+SELECT
+  h.number,
+  h.date,
+  h.name,
+  h.engine_time_sec,
+  h.moving_time_sec,
+  h.idle_time_sec,
+  h.start_type,
+  h.start_pos,
+  h.end_type,
+  h.end_pos,
+  h._ingested_at,
+  h.surrogate_key,
+  FALSE       AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')        AS valid_to
+FROM H_CUR h
+JOIN CHANGED_KEYS ck
+  ON h.surrogate_key = ck.surrogate_key
+ AND h.valid_from    = ck.valid_from 
+
+`, ` 
+
+WITH S_SRC AS (
+  SELECT
+    number,
+    date,
+    name,
+    engine_time_sec,
+    moving_time_sec,
+    idle_time_sec,
+    start_type,
+    start_pos,
+    end_type,
+    end_pos,
+    _ingested_at
+  FROM ${ref("staging_wialon_engine_runtime_vehicles")}
+),
+
+S AS (
+  SELECT
+    s.*,
+
+    TO_HEX(
+      SHA256(
+        CONCAT(
+          COALESCE(name, ''), '|',
+          COALESCE(CAST(date AS STRING), '')
+        )
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+)
+
+SELECT
+  number,
+  date,
+  name,
+  engine_time_sec,
+  moving_time_sec,
+  idle_time_sec,
+  start_type,
+  start_pos,
+  end_type,
+  end_pos,
+  _ingested_at,
+  surrogate_key,
+  TRUE        AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')        AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S
+`)}
