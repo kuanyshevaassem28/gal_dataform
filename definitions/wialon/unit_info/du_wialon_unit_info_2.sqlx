@@ -1,0 +1,41 @@
+-- definitions/gal_wialon/op_dedupe_unit_info_registration_number.sqlx
+config {
+  type: "operations",
+  schema: "gal_wialon",
+  name: "du_wialon_unit_info_2",
+  tags: ["wialon_unit_info", "cleanup", "dedup", "active", "registration_number"],
+  description: "Wialon: (1) оставляет по каждому registration_number одну текущую запись (max valid_from), остальные текущие деактивирует; (2) заполняет registration_number_clean, убирая пробелы."
+}
+
+-- 1) Оставляем по каждому registration_number одну запись с максимальным valid_from среди текущих версий
+UPDATE `galery-22579.gal_wialon.history_wialon_unit_info`
+SET is_active = FALSE
+WHERE is_current = TRUE
+  AND registration_number IS NOT NULL
+  AND registration_number != ''
+  AND surrogate_key IN (
+    SELECT surrogate_key
+    FROM (
+      SELECT
+        surrogate_key,
+        ROW_NUMBER() OVER (
+          PARTITION BY registration_number
+          ORDER BY
+            valid_from DESC,
+            IFNULL(valid_to, DATETIME '9999-12-31 23:59:59') DESC,
+            name DESC
+        ) AS rn
+      FROM `galery-22579.gal_wialon.history_wialon_unit_info`
+      WHERE is_current = TRUE
+        AND registration_number IS NOT NULL
+        AND registration_number != ''
+    )
+    WHERE rn > 1
+  );
+
+-- 2) Чистим registration_number_clean (убираем все пробельные символы), только если clean ещё не заполнен
+UPDATE `galery-22579.gal_wialon.history_wialon_unit_info`
+SET registration_number_clean = REGEXP_REPLACE(registration_number, r'\s+', '')
+WHERE registration_number_clean IS NULL
+  AND registration_number IS NOT NULL
+  AND REGEXP_CONTAINS(registration_number, r'\s');
