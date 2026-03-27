@@ -1,0 +1,392 @@
+config {
+  type: "table",
+  schema: "gal_bitrix24_marts",
+  name: "leads_mart",
+  tags: ["bitrix24_leads", "bitrix24", "leads", "mart"],
+  description: "Маркетинговый mart по лидам Bitrix24 c нормализованными UTM и обогащением из справочников.",
+  columns: {
+    id: "ID лида",
+    title: "Название лида",
+    name_origin: "ФИО из карточки лида",
+    contact_name: "ФИО из карточки контакта",
+    honorific: "Обращение",
+    company_name_origin: "Название компании из лида",
+    company_id: "ID компании",
+    company_name: "Название компании из справочника",
+    contact_id: "ID контакта",
+    is_return_customer: "Признак повторного клиента",
+    birthdate: "Дата рождения",
+    source_id: "ID источника лида",
+    source_name: "Название источника лида",
+    source_description: "Описание источника",
+    status_id: "ID статуса лида",
+    status_name: "Название статуса",
+    status_description: "Описание статуса",
+    status_semantic_id: "Семантический статус (S/P/F)",
+    status_semantic_name: "Семантическое название статуса",
+    post: "Должность",
+    comments: "Комментарии",
+    currency_id: "Валюта",
+    opportunity: "Сумма потенциальной сделки",
+    is_manual_opportunity: "Сумма введена вручную",
+    has_phone: "Наличие телефона",
+    has_email: "Наличие email",
+    has_imol: "Наличие онлайн-чата",
+    assigned_by_id: "ID назначенного ответственного",
+    created_by_id: "ID создавшего пользователя",
+    modify_by_id: "ID последнего изменившего",
+    date_create: "Дата создания",
+    date_modify: "Дата изменения",
+    date_closed: "Дата завершения",
+    opened: "Открыт для всех",
+    originator_id: "ID интеграции",
+    origin_id: "Внешний ID",
+    moved_by_id: "ID пользователя, изменившего стадию",
+    moved_time: "Дата последнего изменения стадии",
+    address: "Адрес (строка 1)",
+    address_2: "Адрес (строка 2)",
+    address_city: "Город",
+    address_postal_code: "Почтовый индекс",
+    address_region: "Регион",
+    address_province: "Провинция",
+    address_country: "Страна",
+    address_country_code: "Код страны",
+    address_loc_addr_id: "ID локального адреса",
+    last_activity_by: "ID пользователя последней активности",
+    last_activity_time: "Дата последней активности",
+    product_type: "Тип продукта (настраиваемое поле)",
+    rs_utm_source: "Источник RS",
+    rs_utm_medium: "Канал RS",
+    rs_utm_campaign: "Кампания RS",
+    rs_utm_term: "Ключевое слово RS",
+    rs_utm_content: "Контент RS",
+    rs_google_client_id: "Google Client ID",
+    required_fields: "Обязательные поля заполнены",
+    rejection_reason: "Причина брака лида",
+    rs_project: "Код проекта RS",
+    assigned_by_name: "ФИО назначенного ответственного",
+    created_by_name: "ФИО создавшего пользователя",
+    modify_by_name: "ФИО последнего изменившего",
+    moved_by_name: "ФИО пользователя, изменившего стадию",
+    last_activity_by_name: "ФИО пользователя последней активности",
+    utm_source: "UTM source",
+    utm_medium: "UTM medium",
+    utm_campaign: "UTM campaign",
+    utm_content: "UTM content",
+    utm_term: "UTM term",
+    utm_source_combined: "Объединённое значение UTM source из прямого и RS-источника",
+    utm_medium_combined: "Объединённое значение UTM medium из прямого и RS-источника",
+    utm_campaign_combined: "Объединённое значение UTM campaign из прямого и RS-источника",
+    utm_content_combined: "Объединённое значение UTM content из прямого и RS-источника",
+    utm_term_combined: "Объединённое значение UTM term из прямого и RS-источника",
+    grp: "Имя группы объявлений",
+    kw: "Текст ключевого слова",
+    plc: "Тип размещения",
+    dev: "Тип устройства",
+    age: "Возраст аудитории",
+    gen: "Пол аудитории",
+    cid: "ID кампании",
+    gid: "ID группы объявлений",
+    kwid: "ID ключевого слова",
+    aid: "ID объявления",
+    cid_only: "ID кампании, когда есть только она"
+  }
+}
+
+WITH lead_base AS (
+  SELECT
+    l.*,
+    CASE
+      WHEN LOWER(TRIM(l.utm_source)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.utm_source))
+      WHEN LOWER(TRIM(l.rs_utm_source)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.rs_utm_source))
+      ELSE NULL
+    END AS utm_source_combined,
+
+    CASE
+      WHEN LOWER(TRIM(l.utm_medium)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.utm_medium))
+      WHEN LOWER(TRIM(l.rs_utm_medium)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.rs_utm_medium))
+      ELSE NULL
+    END AS utm_medium_combined,
+
+    CASE
+      WHEN LOWER(TRIM(l.utm_campaign)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.utm_campaign))
+      WHEN LOWER(TRIM(l.rs_utm_campaign)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.rs_utm_campaign))
+      ELSE NULL
+    END AS utm_campaign_combined,
+
+    CASE
+      WHEN LOWER(TRIM(l.utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.utm_content))
+      WHEN LOWER(TRIM(l.rs_utm_content)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.rs_utm_content))
+      ELSE NULL
+    END AS utm_content_combined,
+
+    CASE
+      WHEN LOWER(TRIM(l.utm_term)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.utm_term))
+      WHEN LOWER(TRIM(l.rs_utm_term)) NOT IN ('<none>', '(none)', 'none', 'not set', '(not set)', 'n/a', '(not provided)')
+        THEN LOWER(TRIM(l.rs_utm_term))
+      ELSE NULL
+    END AS utm_term_combined
+  FROM `galery-22579.gal_bitrix24.history_bitrix24_leads` l
+  WHERE l.is_current = TRUE
+),
+
+leads_enriched AS (
+  SELECT
+    lb.ID AS id,
+    lb.TITLE AS title,
+    CONCAT(lb.LAST_NAME, ' ', lb.NAME, ' ', lb.SECOND_NAME) AS name_origin,
+    CONCAT(ct.LAST_NAME, ' ', ct.NAME, ' ', ct.SECOND_NAME) AS contact_name,
+    lb.HONORIFIC AS honorific,
+    lb.COMPANY_TITLE AS company_name_origin,
+    lb.COMPANY_ID AS company_id,
+    cl.TITLE AS company_name,
+    lb.CONTACT_ID AS contact_id,
+    lb.STATUS_ID AS status_id,
+    sl_status.name AS status_name,
+    lb.STATUS_DESCRIPTION AS status_description,
+    lb.STATUS_SEMANTIC_ID AS status_semantic_id,
+    CASE 
+      WHEN lb.STATUS_SEMANTIC_ID = 'S' THEN 'Успешно завершено'
+      WHEN lb.STATUS_SEMANTIC_ID = 'P' THEN 'В процессе'
+      WHEN lb.STATUS_SEMANTIC_ID = 'F' THEN 'Провалено'
+      ELSE 'Неизвестно'
+    END AS status_semantic_name,
+    lb.SOURCE_ID AS source_id,
+    sl_source.name AS source_name,
+    lb.SOURCE_DESCRIPTION AS source_description,
+    lb.POST AS post,
+    lb.COMMENTS AS comments,
+    lb.IS_RETURN_CUSTOMER AS is_return_customer,
+    lb.BIRTHDATE AS birthdate,
+    lb.CURRENCY_ID AS currency_id,
+    lb.OPPORTUNITY AS opportunity,
+    lb.IS_MANUAL_OPPORTUNITY AS is_manual_opportunity,
+    lb.HAS_PHONE AS has_phone,
+    lb.HAS_EMAIL AS has_email,
+    lb.HAS_IMOL AS has_imol,
+    lb.ASSIGNED_BY_ID AS assigned_by_id,
+    lb.CREATED_BY_ID AS created_by_id,
+    lb.MODIFY_BY_ID AS modify_by_id,
+    lb.DATE_CREATE AS date_create,
+    lb.DATE_MODIFY AS date_modify,
+    lb.DATE_CLOSED AS date_closed,
+    lb.MOVED_BY_ID AS moved_by_id,
+    lb.MOVED_TIME AS moved_time,
+    lb.LAST_ACTIVITY_BY AS last_activity_by,
+    lb.LAST_ACTIVITY_TIME AS last_activity_time,
+    lb.ADDRESS AS address,
+    lb.ADDRESS_2 AS address_2,
+    lb.ADDRESS_CITY AS address_city,
+    lb.ADDRESS_POSTAL_CODE AS address_postal_code,
+    lb.ADDRESS_REGION AS address_region,
+    lb.ADDRESS_PROVINCE AS address_province,
+    lb.ADDRESS_COUNTRY AS address_country,
+    lb.ADDRESS_COUNTRY_CODE AS address_country_code,
+    lb.ADDRESS_LOC_ADDR_ID AS address_loc_addr_id,
+    lb.OPENED AS opened,
+    lb.ORIGINATOR_ID AS originator_id,
+    lb.ORIGIN_ID AS origin_id,
+    lb.UTM_SOURCE AS utm_source,
+    lb.UTM_MEDIUM AS utm_medium,
+    lb.UTM_CAMPAIGN AS utm_campaign,
+    lb.UTM_CONTENT AS utm_content,
+    lb.UTM_TERM AS utm_term,
+    lb.product_type AS product_type,
+    lb.rs_utm_source,
+    lb.rs_utm_medium,
+    lb.rs_utm_campaign,
+    lb.rs_utm_term,
+    lb.rs_utm_content,
+    lb.rs_google_client_id,
+    lb.required_fields,
+    lb.lead_rejection_reason AS rejection_reason,
+    lb.rs_project,
+
+    COALESCE(
+      ARRAY_TO_STRING(
+        ARRAY(
+          SELECT part
+          FROM UNNEST([ul_assigned.LAST_NAME, ul_assigned.NAME, ul_assigned.SECOND_NAME]) AS part
+          WHERE part IS NOT NULL AND TRIM(part) != ''
+        ),
+        ' '
+      ),
+      'Неизвестно'
+    ) AS assigned_by_name,
+
+    COALESCE(
+      ARRAY_TO_STRING(
+        ARRAY(
+          SELECT part
+          FROM UNNEST([ul_created.LAST_NAME, ul_created.NAME, ul_created.SECOND_NAME]) AS part
+          WHERE part IS NOT NULL AND TRIM(part) != ''
+        ),
+        ' '
+      ),
+      'Неизвестно'
+    ) AS created_by_name,
+
+    COALESCE(
+      ARRAY_TO_STRING(
+        ARRAY(
+          SELECT part
+          FROM UNNEST([ul_modify.LAST_NAME, ul_modify.NAME, ul_modify.SECOND_NAME]) AS part
+          WHERE part IS NOT NULL AND TRIM(part) != ''
+        ),
+        ' '
+      ),
+      'Неизвестно'
+    ) AS modify_by_name,
+
+    COALESCE(
+      ARRAY_TO_STRING(
+        ARRAY(
+          SELECT part
+          FROM UNNEST([ul_moved.LAST_NAME, ul_moved.NAME, ul_moved.SECOND_NAME]) AS part
+          WHERE part IS NOT NULL AND TRIM(part) != ''
+        ),
+        ' '
+      ),
+      'Неизвестно'
+    ) AS moved_by_name,
+
+    COALESCE(
+      ARRAY_TO_STRING(
+        ARRAY(
+          SELECT part
+          FROM UNNEST([ul_last_activity.LAST_NAME, ul_last_activity.NAME, ul_last_activity.SECOND_NAME]) AS part
+          WHERE part IS NOT NULL AND TRIM(part) != ''
+        ),
+        ' '
+      ),
+      'Неизвестно'
+    ) AS last_activity_by_name,
+
+    lb.utm_source_combined,
+    lb.utm_medium_combined,
+    lb.utm_campaign_combined,
+    lb.utm_content_combined,
+    lb.utm_term_combined,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'grp\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'grp\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'grp\|([^|]+)')
+    ) AS grp,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'kw\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'kw\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'kw\|([^|]+)')
+    ) AS kw,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'plc\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'plc\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'plc\|([^|]+)')
+    ) AS plc,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'dev\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'dev\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'dev\|([^|]+)')
+    ) AS dev,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'age\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'age\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'age\|([^|]+)')
+    ) AS age,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'gen\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'gen\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'gen\|([^|]+)')
+    ) AS gen,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'cid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'cid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'cid\|([^|]+)'),
+      CASE
+        WHEN REGEXP_CONTAINS(lb.utm_campaign_combined, r'^[0-9]+$') THEN lb.utm_campaign_combined
+        ELSE NULL
+      END
+    ) AS cid,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'gid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'gid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'gid\|([^|]+)')
+    ) AS gid,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'kwid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'kwid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'kwid\|([^|]+)')
+    ) AS kwid,
+
+    COALESCE(
+      REGEXP_EXTRACT(lb.utm_content_combined,  r'aid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_campaign_combined, r'aid\|([^|]+)'),
+      REGEXP_EXTRACT(lb.utm_term_combined,     r'aid\|([^|]+)')
+    ) AS aid,
+
+    CASE
+      WHEN REGEXP_CONTAINS(lb.utm_campaign_combined, r'^[0-9]+$')
+        THEN lb.utm_campaign_combined
+      ELSE NULL
+    END AS cid_only
+
+  FROM lead_base lb
+
+  LEFT JOIN ${ref("history_bitrix24_status_list")} sl_status
+    ON lb.STATUS_ID = sl_status.STATUS_ID
+   AND sl_status.is_current = TRUE
+   AND sl_status.ENTITY_ID = 'STATUS'
+
+  LEFT JOIN ${ref("history_bitrix24_status_list")} sl_source
+    ON lb.SOURCE_ID = sl_source.STATUS_ID
+   AND sl_source.is_current = TRUE
+   AND sl_source.ENTITY_ID = 'SOURCE'
+
+  LEFT JOIN ${ref("history_bitrix24_company_list")} cl
+    ON lb.COMPANY_ID = cl.ID
+   AND cl.is_current = TRUE
+
+  LEFT JOIN ${ref("history_bitrix24_contacts")} ct
+    ON lb.CONTACT_ID = ct.ID
+   AND ct.is_current = TRUE
+
+  LEFT JOIN ${ref("history_bitrix24_user_list")} ul_assigned
+    ON lb.ASSIGNED_BY_ID = ul_assigned.ID
+   AND ul_assigned.is_current = TRUE
+
+  LEFT JOIN ${ref("history_bitrix24_user_list")} ul_created
+    ON lb.CREATED_BY_ID = ul_created.ID
+   AND ul_created.is_current = TRUE
+
+  LEFT JOIN ${ref("history_bitrix24_user_list")} ul_modify
+    ON lb.MODIFY_BY_ID = ul_modify.ID
+   AND ul_modify.is_current = TRUE
+
+  LEFT JOIN ${ref("history_bitrix24_user_list")} ul_moved
+    ON lb.MOVED_BY_ID = ul_moved.ID
+   AND ul_moved.is_current = TRUE
+
+  LEFT JOIN ${ref("history_bitrix24_user_list")} ul_last_activity
+    ON lb.LAST_ACTIVITY_BY = ul_last_activity.ID
+   AND ul_last_activity.is_current = TRUE
+)
+
+SELECT *
+FROM leads_enriched
