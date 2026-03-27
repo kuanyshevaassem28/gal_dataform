@@ -1,0 +1,90 @@
+config {
+  type: "table",
+  schema: "gal_wialon",
+  name: "staging_wialon_trips",
+  tags: ["wialon_trips", "wialon", "trips", "staging"],
+  description: "Wialon: нормализованные поездки (level=3) с парсингом distance/speed/time в числовые поля.",
+
+  columns: {
+    number:          "Номер строки Wialon-отчёта",
+    level:           "Уровень строки (3 = поездка)",
+    parent_number:   "Номер родительской строки (level 2)",
+    subrows_count:   "Количество подстрок",
+    row_n:           "Порядковый номер строки",
+    date:            "Дата поездки",
+    name:            "Название объекта / трека",
+    start_type:      "Тип начала (start)",
+    start_pos:       "Строка с координатами/адресом начала",
+    end_type:        "Тип окончания (end)",
+    end_pos:         "Строка с координатами/адресом окончания",
+    distance_km:     "Дистанция, км (FLOAT64)",
+    avg_speed_km_h:  "Средняя скорость, км/ч (FLOAT64)",
+    max_speed_km_h:  "Максимальная скорость, км/ч (FLOAT64)",
+    total_time_sec:  "Длительность поездки, сек (INT64)",
+    _ingested_at:    "Время загрузки отчёта",
+    table_index:     "Индекс таблицы в Wialon-отчёте"
+  }
+}
+
+WITH joined AS (
+  SELECT
+    t3.number,
+    t3.level,
+    t3.parent_number,
+    t3.subrows_count,
+    t3.row_n,
+    t1.date,
+    t3.name,
+    t3.start AS start_type,
+    t3.start_pos,
+    t3.end   AS end_type,
+    t3.end_pos,
+    t3.distance,
+    t3.avg_speed,
+    t3.max_speed,
+    t3.total_time,
+    t3._ingested_at,
+    t3.table_index
+  FROM ${ref("external_staging_wialon_trips")} AS t3
+  JOIN ${ref("external_staging_wialon_trips")} AS t2
+    ON t2.number = t3.parent_number
+   AND t2._ingested_at = t3._ingested_at
+  JOIN ${ref("external_staging_wialon_trips")} AS t1
+    ON t1.number = t2.parent_number
+   AND t1._ingested_at = t2._ingested_at
+  WHERE t3.level = 3 AND t2.level = 2 AND t1.level = 1
+)
+
+SELECT
+  number,
+  level,
+  parent_number,
+  subrows_count,
+  row_n,
+  date,
+  name,
+  start_type,
+  start_pos,
+  end_type,
+  end_pos,
+
+  SAFE_CAST(REGEXP_REPLACE(distance,  r'[^0-9\.\-]', '') AS FLOAT64) AS distance_km,
+  SAFE_CAST(REGEXP_REPLACE(avg_speed, r'[^0-9\.\-]', '') AS FLOAT64) AS avg_speed_km_h,
+  SAFE_CAST(REGEXP_REPLACE(max_speed, r'[^0-9\.\-]', '') AS FLOAT64) AS max_speed_km_h,
+
+  CASE ARRAY_LENGTH(SPLIT(REGEXP_REPLACE(IFNULL(total_time, ''), r'[^0-9:]', ''), ':'))
+    WHEN 3 THEN
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(total_time, r'[^0-9:]', '') , ':')[SAFE_OFFSET(0)] AS INT64), 0) * 3600 +
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(total_time, r'[^0-9:]', '') , ':')[SAFE_OFFSET(1)] AS INT64), 0) *   60 +
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(total_time, r'[^0-9:]', '') , ':')[SAFE_OFFSET(2)] AS INT64), 0)
+    WHEN 2 THEN
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(total_time, r'[^0-9:]', '') , ':')[SAFE_OFFSET(0)] AS INT64), 0) *   60 +
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(total_time, r'[^0-9:]', '') , ':')[SAFE_OFFSET(1)] AS INT64), 0)
+    WHEN 1 THEN
+      COALESCE(SAFE_CAST(SPLIT(REGEXP_REPLACE(total_time, r'[^0-9:]', '') , ':')[SAFE_OFFSET(0)] AS INT64), 0)
+    ELSE 0
+  END AS total_time_sec,
+
+  _ingested_at,
+  table_index
+FROM joined
