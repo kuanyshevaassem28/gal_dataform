@@ -1,0 +1,184 @@
+config {
+  type: "operations",
+  schema: "gal_yandex_ads_data",
+  name: "history_yandex_ads_data_asylqala",
+  hasOutput: true, 
+  tags: ["yandex_ads_data_asylqala", "yandex_ads", "history", "scd2", "asylqala"],
+  description: "Yandex Ads (Asylqala) — SCD-2 история по surrogate_key (Date+CampaignId+AdGroupId+AdId) с hash_diff по метрикам (Impressions, Clicks, Cost).",
+  columns: {
+    Date: "Дата отчёта (DATE).",
+    CampaignId: "ID рекламной кампании.",
+    CampaignName: "Название рекламной кампании.",
+    CampaignType: "Тип кампании (по классификации Yandex).",
+    AdGroupId: "ID группы объявлений.",
+    AdGroupName: "Название группы объявлений.",
+    AdId: "ID объявления.",
+    Impressions: "Количество показов.",
+    Clicks: "Количество кликов.",
+    Cost: "Стоимость рекламы (в рублях).",
+    surrogate_key: "Бизнес-ключ: SHA256(Date|CampaignId|AdGroupId|AdId).",
+    is_current: "Флаг актуальной версии записи в SCD2.",
+    valid_from: "Дата/время начала актуальности версии.",
+    valid_to: "Дата/время окончания актуальности версии."
+  }
+
+}
+
+
+DECLARE run_dt DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty");
+
+-- Если таблицы ещё нет — создаём её
+CREATE TABLE IF NOT EXISTS ${self()} (
+  Date DATE,
+  CampaignId STRING,
+  CampaignName STRING,
+  CampaignType STRING,
+  AdGroupId STRING,
+  AdGroupName STRING,
+  AdId STRING,
+  Impressions INT64,
+  Clicks INT64,
+  Cost FLOAT64,
+  surrogate_key STRING,
+  is_current BOOL,
+  valid_from DATETIME,
+  valid_to DATETIME
+);
+
+MERGE ${self()} t
+USING (
+
+  WITH s AS (
+    SELECT
+      Date,
+      CampaignId,
+      CampaignName,
+      CampaignType,
+      AdGroupId,
+      AdGroupName,
+      AdId,
+      Impressions,
+      Clicks,
+      Cost,
+      surrogate_key
+    FROM ${ref("staging_yandex_ads_data_asylqala")}
+  ),
+
+  h_cur AS (
+    SELECT *
+    FROM ${self()}
+    WHERE is_current = TRUE
+  ),
+
+  diff AS (
+    SELECT
+      s.*,
+      h_cur.valid_from AS old_valid_from,
+
+      -- новый ключ
+      (h_cur.surrogate_key IS NULL) AS is_new,
+
+      -- изменились метрики
+      (
+        h_cur.surrogate_key IS NOT NULL AND (
+             s.Impressions IS DISTINCT FROM h_cur.Impressions
+          OR s.Clicks      IS DISTINCT FROM h_cur.Clicks
+          OR s.Cost        IS DISTINCT FROM h_cur.Cost
+        )
+      ) AS is_changed
+
+    FROM s
+    LEFT JOIN h_cur
+      ON s.surrogate_key = h_cur.surrogate_key
+  ),
+
+  rows_to_merge AS (
+
+    -- 1️⃣ Закрываем старую версию
+    SELECT
+      surrogate_key,
+      old_valid_from AS valid_from,
+      run_dt AS valid_to,
+      FALSE AS is_current,
+      NULL AS Date,
+      NULL AS CampaignId,
+      NULL AS CampaignName,
+      NULL AS CampaignType,
+      NULL AS AdGroupId,
+      NULL AS AdGroupName,
+      NULL AS AdId,
+      NULL AS Impressions,
+      NULL AS Clicks,
+      NULL AS Cost,
+      'U' AS op
+    FROM diff
+    WHERE is_changed = TRUE
+
+    UNION ALL
+
+    -- 2️⃣ Вставляем новую версию
+    SELECT
+      surrogate_key,
+      run_dt AS valid_from,
+      NULL AS valid_to,
+      TRUE AS is_current,
+      Date,
+      CampaignId,
+      CampaignName,
+      CampaignType,
+      AdGroupId,
+      AdGroupName,
+      AdId,
+      Impressions,
+      Clicks,
+      Cost,
+      'I' AS op
+    FROM diff
+    WHERE is_new = TRUE OR is_changed = TRUE
+  )
+
+  SELECT * FROM rows_to_merge
+
+) s
+
+ON t.surrogate_key = s.surrogate_key
+AND t.valid_from   = s.valid_from
+
+WHEN MATCHED AND s.op = 'U' THEN
+  UPDATE SET
+    is_current = FALSE,
+    valid_to   = s.valid_to
+
+WHEN NOT MATCHED AND s.op = 'I' THEN
+  INSERT (
+    Date,
+    CampaignId,
+    CampaignName,
+    CampaignType,
+    AdGroupId,
+    AdGroupName,
+    AdId,
+    Impressions,
+    Clicks,
+    Cost,
+    surrogate_key,
+    is_current,
+    valid_from,
+    valid_to
+  )
+  VALUES (
+    s.Date,
+    s.CampaignId,
+    s.CampaignName,
+    s.CampaignType,
+    s.AdGroupId,
+    s.AdGroupName,
+    s.AdId,
+    s.Impressions,
+    s.Clicks,
+    s.Cost,
+    s.surrogate_key,
+    TRUE,
+    s.valid_from,
+    NULL
+  );
