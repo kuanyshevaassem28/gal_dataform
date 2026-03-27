@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_bsu_pp3",
+  name: "external_staging_bsu_pp3_arc_zames"
+}
