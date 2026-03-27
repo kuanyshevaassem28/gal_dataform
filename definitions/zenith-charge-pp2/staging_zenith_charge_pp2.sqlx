@@ -1,0 +1,157 @@
+config {
+  type: "table",
+  schema: "gal_zenith",
+  name: "staging_zenith_charge_pp2",
+  tags: ["zenith", "pp2", "staging"],
+  description: "Staging-слой для PP2 (Zenith): нормализация данных, BK/SK/hash_diff и дедупликация.",
+  columns: {
+    FileName: "Имя файла-источника",
+    Date: "Дата записи",
+    Betriebsdatenerfassung: "Метка BDE",
+    Mitarbeiter: "Сотрудник/оператор",
+    Rezeptname: "Название рецепта/программы",
+    Form1: "Форма 1", Form2: "Форма 2", Form3: "Форма 3",
+    Form4: "Форма 4", Form5: "Форма 5", Form6: "Форма 6",
+    BDEgestartet: "Время запуска (DATETIME)",
+    BDEgestoppt: "Время остановки (DATETIME)",
+    BDELaufzeit: "Время работы",
+    ProSchichtAVG: "Среднее за смену",
+    GesamCyclest: "Всего циклов",
+    ProSchichtCycles: "Циклов за смену",
+    AnzBretterTKProSchicht: "Количество досок с продуктом за смену",
+    Automatikbetrieb: "Автоматический режим",
+    Handbetrieb: "Ручной режим",
+    Einrichtbetrieb: "Наладка",
+    AufBretter: "Операции на брусьях",
+    AufKernbeton: "Операции на ядре бетона",
+    AufVorsatzbeton: "Операции на облицовочном бетоне",
+    AufProdukttransport: "Операции транспортировки",
+    Anlagenstoerung: "Аварии/простой",
+    bk: "Бизнес-ключ: BDEgestartet|BDEgestoppt",
+    surrogate_key: "Хэш бизнес-ключа (SHA256 от BDEgestartet|BDEgestoppt)",
+    hash_diff: "Хэш содержимого записи (для детекции изменений)"
+  }
+}
+
+WITH src AS (
+  SELECT *
+  FROM `galery-22579.gal_zenith.external_staging_zenith_charge_pp2`
+),
+
+typed AS (
+  SELECT 
+    TRIM(FileName)               AS FileName,
+    TRIM(Date)                   AS Date,
+    TRIM(Betriebsdatenerfassung) AS Betriebsdatenerfassung,
+    TRIM(Rezeptname)             AS Rezeptname,
+ 
+    TRIM(CAST(Mitarbeiter AS STRING)) AS Mitarbeiter,
+    TRIM(CAST(Form1      AS STRING))  AS Form1,
+    TRIM(CAST(Form2      AS STRING))  AS Form2,
+    TRIM(CAST(Form3      AS STRING))  AS Form3,
+    TRIM(CAST(Form4      AS STRING))  AS Form4,
+    TRIM(CAST(Form5      AS STRING))  AS Form5,
+    TRIM(CAST(Form6      AS STRING))  AS Form6,
+ 
+    CASE
+      WHEN REGEXP_CONTAINS(TRIM(BDEgestartet), r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$')
+        THEN SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S',
+              REPLACE(TRIM(BDEgestartet), 'T', ' '))
+      WHEN REGEXP_CONTAINS(TRIM(BDEgestartet), r'^\d{2}\.\d{2}\.\d{4}[ ]\d{2}:\d{2}:\d{2}$')
+        THEN SAFE.PARSE_DATETIME('%d.%m.%Y %H:%M:%S',
+              TRIM(BDEgestartet))
+      ELSE NULL
+    END AS BDEgestartet,
+
+    CASE
+      WHEN REGEXP_CONTAINS(TRIM(BDEgestoppt), r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$')
+        THEN SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S',
+              REPLACE(TRIM(BDEgestoppt), 'T', ' '))
+      WHEN REGEXP_CONTAINS(TRIM(BDEgestoppt), r'^\d{2}\.\d{2}\.\d{4}[ ]\d{2}:\d{2}:\d{2}$')
+        THEN SAFE.PARSE_DATETIME('%d.%m.%Y %H:%M:%S',
+              TRIM(BDEgestoppt))
+      ELSE NULL
+    END AS BDEgestoppt,
+ 
+    SAFE_CAST(BDELaufzeit           AS INT64) AS BDELaufzeit,
+    SAFE_CAST(ProSchichtAVG         AS INT64) AS ProSchichtAVG,
+    SAFE_CAST(GesamCyclest          AS INT64) AS GesamCyclest,
+    SAFE_CAST(ProSchichtCycles      AS INT64) AS ProSchichtCycles,
+    SAFE_CAST(AnzBretterTKProSchicht AS INT64) AS AnzBretterTKProSchicht,
+    SAFE_CAST(Automatikbetrieb      AS INT64) AS Automatikbetrieb,
+    SAFE_CAST(Handbetrieb           AS INT64) AS Handbetrieb,
+    SAFE_CAST(Einrichtbetrieb       AS INT64) AS Einrichtbetrieb,
+    SAFE_CAST(AufBretter            AS INT64) AS AufBretter,
+    SAFE_CAST(AufKernbeton          AS INT64) AS AufKernbeton,
+    SAFE_CAST(AufVorsatzbeton       AS INT64) AS AufVorsatzbeton,
+    SAFE_CAST(AufProdukttransport   AS INT64) AS AufProdukttransport,
+    SAFE_CAST(Anlagenstoerung       AS INT64) AS Anlagenstoerung
+  FROM src
+),
+
+
+enriched AS (
+  SELECT
+    t.*,
+    -- бизнес-ключ: по времени запуска/остановки
+    CONCAT(
+      IFNULL(CAST(BDEgestartet AS STRING), ''), '|',
+      IFNULL(CAST(BDEgestoppt  AS STRING), '')
+    ) AS bk,
+
+    -- суррогатный ключ: хэш BK
+    TO_HEX(
+      SHA256(
+        CONCAT(
+          IFNULL(CAST(BDEgestartet AS STRING), ''), '|',
+          IFNULL(CAST(BDEgestoppt  AS STRING), '')
+        )
+      )
+    ) AS surrogate_key,
+
+    -- hash_diff по всем полезным полям
+    TO_HEX(SHA256(CONCAT(
+      IFNULL(TRIM(FileName), ''), '|',
+      IFNULL(TRIM(Date), ''), '|',
+      IFNULL(TRIM(Betriebsdatenerfassung), ''), '|',
+      IFNULL(TRIM(Mitarbeiter), ''), '|',
+      IFNULL(TRIM(Rezeptname), ''), '|',
+      IFNULL(TRIM(Form1), ''), '|',
+      IFNULL(TRIM(Form2), ''), '|',
+      IFNULL(TRIM(Form3), ''), '|',
+      IFNULL(TRIM(Form4), ''), '|',
+      IFNULL(TRIM(Form5), ''), '|',
+      IFNULL(TRIM(Form6), ''), '|',
+      IFNULL(CAST(BDELaufzeit AS STRING), ''), '|',
+      IFNULL(CAST(ProSchichtAVG AS STRING), ''), '|',
+      IFNULL(CAST(GesamCyclest AS STRING), ''), '|',
+      IFNULL(CAST(ProSchichtCycles AS STRING), ''), '|',
+      IFNULL(CAST(AnzBretterTKProSchicht AS STRING), ''), '|',
+      IFNULL(CAST(Automatikbetrieb AS STRING), ''), '|',
+      IFNULL(CAST(Handbetrieb AS STRING), ''), '|',
+      IFNULL(CAST(Einrichtbetrieb AS STRING), ''), '|',
+      IFNULL(CAST(AufBretter AS STRING), ''), '|',
+      IFNULL(CAST(AufKernbeton AS STRING), ''), '|',
+      IFNULL(CAST(AufVorsatzbeton AS STRING), ''), '|',
+      IFNULL(CAST(AufProdukttransport AS STRING), ''), '|',
+      IFNULL(CAST(Anlagenstoerung AS STRING), '')
+    ))) AS hash_diff
+  FROM typed t
+),
+
+dedup AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      e.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY bk
+        ORDER BY BDEgestartet DESC NULLS LAST
+      ) AS rn
+    FROM enriched e
+  )
+  WHERE rn = 1
+)
+
+SELECT *
+FROM dedup
