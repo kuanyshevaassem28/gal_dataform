@@ -1,0 +1,211 @@
+config {
+  type: "incremental",
+  schema: "gal_bitrix24",
+  name: "history_bitrix24_company_list",
+  tags: ["bitrix24_company_list", "bitrix24", "company_list", "history", "scd2"],
+  description: "SCD-2 история компаний Bitrix24 по surrogate_key = SHA256(ID) с is_current/valid_from/valid_to.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(incremental(), `
+
+WITH
+
+-- 1️⃣ Дедуп staging (как в MERGE)
+S_DEDUP AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      s.*,
+      TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key,
+      ROW_NUMBER() OVER (
+        PARTITION BY CAST(s.ID AS STRING)
+        ORDER BY SAFE_CAST(s.DATE_MODIFY AS DATETIME) DESC
+      ) AS rn
+    FROM ${ref("external_staging_bitrix24_company_list")} s
+  )
+  WHERE rn = 1
+),
+
+-- 2️⃣ Текущие записи
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+-- 3️⃣ Определяем новые и изменённые
+DIFF AS (
+  SELECT
+    s.*,
+    h.valid_from AS h_valid_from,
+
+    h.surrogate_key IS NULL AS is_new,
+
+    (
+      h.surrogate_key IS NOT NULL AND (
+           h.TITLE                   IS DISTINCT FROM s.TITLE
+        OR h.DATE_CREATE             IS DISTINCT FROM s.DATE_CREATE
+        OR h.ASSIGNED_BY_ID          IS DISTINCT FROM s.ASSIGNED_BY_ID
+        OR h.COMMENTS                IS DISTINCT FROM s.COMMENTS
+        OR h.CURRENCY_ID             IS DISTINCT FROM s.CURRENCY_ID
+        OR h.HAS_PHONE               IS DISTINCT FROM s.HAS_PHONE
+        OR h.HAS_EMAIL               IS DISTINCT FROM s.HAS_EMAIL
+        OR h.HAS_IMOL                IS DISTINCT FROM s.HAS_IMOL
+        OR h.CREATED_BY_ID           IS DISTINCT FROM s.CREATED_BY_ID
+        OR h.MODIFY_BY_ID            IS DISTINCT FROM s.MODIFY_BY_ID
+        OR h.DATE_MODIFY             IS DISTINCT FROM s.DATE_MODIFY
+        OR h.ORIGINATOR_ID           IS DISTINCT FROM s.ORIGINATOR_ID
+        OR h.ORIGIN_ID               IS DISTINCT FROM s.ORIGIN_ID
+        OR h.ORIGIN_VERSION          IS DISTINCT FROM s.ORIGIN_VERSION
+        OR h.ADDRESS                 IS DISTINCT FROM s.ADDRESS
+        OR h.ADDRESS_2               IS DISTINCT FROM s.ADDRESS_2
+        OR h.ADDRESS_CITY            IS DISTINCT FROM s.ADDRESS_CITY
+        OR h.ADDRESS_POSTAL_CODE     IS DISTINCT FROM s.ADDRESS_POSTAL_CODE
+        OR h.ADDRESS_REGION          IS DISTINCT FROM s.ADDRESS_REGION
+        OR h.ADDRESS_PROVINCE        IS DISTINCT FROM s.ADDRESS_PROVINCE
+        OR h.ADDRESS_COUNTRY         IS DISTINCT FROM s.ADDRESS_COUNTRY
+        OR h.ADDRESS_COUNTRY_CODE    IS DISTINCT FROM s.ADDRESS_COUNTRY_CODE
+        OR h.ADDRESS_LOC_ADDR_ID     IS DISTINCT FROM s.ADDRESS_LOC_ADDR_ID
+        OR h.UTM_SOURCE              IS DISTINCT FROM s.UTM_SOURCE
+        OR h.UTM_MEDIUM              IS DISTINCT FROM s.UTM_MEDIUM
+        OR h.UTM_CAMPAIGN            IS DISTINCT FROM s.UTM_CAMPAIGN
+        OR h.UTM_CONTENT             IS DISTINCT FROM s.UTM_CONTENT
+        OR h.UTM_TERM                IS DISTINCT FROM s.UTM_TERM
+        OR h.LAST_COMMUNICATION_TIME IS DISTINCT FROM s.LAST_COMMUNICATION_TIME
+        OR h.LAST_ACTIVITY_BY        IS DISTINCT FROM s.LAST_ACTIVITY_BY
+        OR h.LAST_ACTIVITY_TIME      IS DISTINCT FROM s.LAST_ACTIVITY_TIME
+        OR h.LEAD_ID                 IS DISTINCT FROM s.LEAD_ID
+        OR h.OPENED                  IS DISTINCT FROM s.OPENED
+        OR h.PARENT_ID_1126          IS DISTINCT FROM s.PARENT_ID_1126
+        OR h.PARENT_ID_1156          IS DISTINCT FROM s.PARENT_ID_1156
+      )
+    ) AS is_changed
+
+  FROM S_DEDUP s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+),
+
+-- 4️⃣ Закрываем старые версии
+TO_CLOSE AS (
+  SELECT h.*
+  FROM H_CUR h
+  JOIN DIFF d
+    ON d.surrogate_key = h.surrogate_key
+  WHERE d.is_changed = TRUE
+),
+
+-- 5️⃣ Вставляем новые версии
+TO_INSERT AS (
+  SELECT *
+  FROM DIFF
+  WHERE is_new = TRUE OR is_changed = TRUE
+)
+
+SELECT
+  i.ID,
+  i.TITLE,
+  i.DATE_CREATE,
+  i.ASSIGNED_BY_ID,
+  i.COMMENTS,
+  i.CURRENCY_ID,
+  i.HAS_PHONE,
+  i.HAS_EMAIL,
+  i.HAS_IMOL,
+  i.CREATED_BY_ID,
+  i.MODIFY_BY_ID,
+  i.DATE_MODIFY,
+  i.ORIGINATOR_ID,
+  i.ORIGIN_ID,
+  i.ORIGIN_VERSION,
+  i.ADDRESS,
+  i.ADDRESS_2,
+  i.ADDRESS_CITY,
+  i.ADDRESS_POSTAL_CODE,
+  i.ADDRESS_REGION,
+  i.ADDRESS_PROVINCE,
+  i.ADDRESS_COUNTRY,
+  i.ADDRESS_COUNTRY_CODE,
+  i.ADDRESS_LOC_ADDR_ID,
+  i.UTM_SOURCE,
+  i.UTM_MEDIUM,
+  i.UTM_CAMPAIGN,
+  i.UTM_CONTENT,
+  i.UTM_TERM,
+  i.LAST_COMMUNICATION_TIME,
+  i.LAST_ACTIVITY_BY,
+  i.LAST_ACTIVITY_TIME,
+  i.LEAD_ID,
+  i.OPENED,
+  i.PARENT_ID_1126,
+  i.PARENT_ID_1156,
+  i.surrogate_key,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM TO_INSERT i
+
+UNION ALL
+
+SELECT
+  h.ID,
+  h.TITLE,
+  h.DATE_CREATE,
+  h.ASSIGNED_BY_ID,
+  h.COMMENTS,
+  h.CURRENCY_ID,
+  h.HAS_PHONE,
+  h.HAS_EMAIL,
+  h.HAS_IMOL,
+  h.CREATED_BY_ID,
+  h.MODIFY_BY_ID,
+  h.DATE_MODIFY,
+  h.ORIGINATOR_ID,
+  h.ORIGIN_ID,
+  h.ORIGIN_VERSION,
+  h.ADDRESS,
+  h.ADDRESS_2,
+  h.ADDRESS_CITY,
+  h.ADDRESS_POSTAL_CODE,
+  h.ADDRESS_REGION,
+  h.ADDRESS_PROVINCE,
+  h.ADDRESS_COUNTRY,
+  h.ADDRESS_COUNTRY_CODE,
+  h.ADDRESS_LOC_ADDR_ID,
+  h.UTM_SOURCE,
+  h.UTM_MEDIUM,
+  h.UTM_CAMPAIGN,
+  h.UTM_CONTENT,
+  h.UTM_TERM,
+  h.LAST_COMMUNICATION_TIME,
+  h.LAST_ACTIVITY_BY,
+  h.LAST_ACTIVITY_TIME,
+  h.LEAD_ID,
+  h.OPENED,
+  h.PARENT_ID_1126,
+  h.PARENT_ID_1156,
+  h.surrogate_key,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to
+FROM TO_CLOSE h
+
+`, `
+
+
+WITH S AS (
+  SELECT
+    s.*,
+    TO_HEX(SHA256(COALESCE(CAST(s.ID AS STRING), ''))) AS surrogate_key
+  FROM ${ref("external_staging_bitrix24_company_list")} s
+)
+
+SELECT
+  s.*,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S s
+
+`)}
