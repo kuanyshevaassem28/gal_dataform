@@ -1,0 +1,106 @@
+config {
+  type: "incremental",
+  schema: "gal_bitrix24",
+  name: "history_bitrix24_status_list",
+  tags: ["bitrix24_status_list", "bitrix24", "status_list", "history", "scd2"],
+  description: "SCD-2 история статусов Bitrix24 по surrogate_key = SHA256(ID) с is_current/valid_from/valid_to.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+}
+
+-- =====================================================
+-- 1. Источник + surrogate_key
+-- =====================================================
+
+WITH S AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      s.*,
+      TO_HEX(SHA256(COALESCE(s.ID, ''))) AS surrogate_key,
+      ROW_NUMBER() OVER (PARTITION BY s.ID) rn
+    FROM ${ref("external_staging_bitrix24_status_list")} s
+  )
+  WHERE rn = 1
+),
+
+-- =====================================================
+-- 2. Текущая версия из history
+-- =====================================================
+
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+-- =====================================================
+-- 3. Находим новые или изменённые
+-- =====================================================
+
+DIFF AS (
+  SELECT
+    s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE
+    h.surrogate_key IS NULL
+    OR (
+      h.ENTITY_ID   IS DISTINCT FROM s.ENTITY_ID OR
+      h.STATUS_ID   IS DISTINCT FROM s.STATUS_ID OR
+      h.NAME        IS DISTINCT FROM s.NAME OR
+      h.NAME_INIT   IS DISTINCT FROM s.NAME_INIT OR
+      h.SORT        IS DISTINCT FROM s.SORT OR
+      h.SYSTEM      IS DISTINCT FROM s.SYSTEM OR
+      h.CATEGORY_ID IS DISTINCT FROM s.CATEGORY_ID OR
+      h.COLOR       IS DISTINCT FROM s.COLOR OR
+      h.SEMANTICS   IS DISTINCT FROM s.SEMANTICS OR
+      TO_JSON_STRING(h.EXTRA) IS DISTINCT FROM TO_JSON_STRING(s.EXTRA)
+    )
+)
+
+-- =====================================================
+-- 4. Закрываем старые версии (вставкой закрытой строки)
+-- =====================================================
+
+SELECT
+  h.ID,
+  h.ENTITY_ID,
+  h.STATUS_ID,
+  h.NAME,
+  h.NAME_INIT,
+  h.SORT,
+  h.SYSTEM,
+  h.CATEGORY_ID,
+  h.COLOR,
+  h.SEMANTICS,
+  h.EXTRA,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to,
+  h.surrogate_key
+FROM H_CUR h
+JOIN DIFF d USING (surrogate_key)
+
+UNION ALL
+
+-- =====================================================
+-- 5. Вставляем новые версии
+-- =====================================================
+
+SELECT
+  d.ID,
+  d.ENTITY_ID,
+  d.STATUS_ID,
+  d.NAME,
+  d.NAME_INIT,
+  d.SORT,
+  d.SYSTEM,
+  d.CATEGORY_ID,
+  d.COLOR,
+  d.SEMANTICS,
+  d.EXTRA,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  d.surrogate_key
+FROM DIFF d
