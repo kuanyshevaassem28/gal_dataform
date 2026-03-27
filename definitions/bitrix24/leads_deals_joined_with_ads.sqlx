@@ -1,0 +1,448 @@
+config {
+  type: "table",
+  schema: "gal_bitrix24_marts",
+  name: "leads_deals_joined_with_ads",
+  tags: ["bitrix24_deals", "bitrix24_leads", "bitrix24", "leads", "deals", "ads", "mart"],
+  description: "Объединённый mart лидов/сделок Bitrix24 с данными Google Ads.",
+  columns: { 
+    lead_id: "Лид: ID лида",
+    lead_title: "Лид: Название лида",
+    lead_name_origin: "Лид: ФИО из карточки лида",
+    lead_contact_name: "Лид: ФИО из карточки контакта",
+    lead_honorific: "Лид: Обращение",
+    lead_company_name_origin: "Лид: Название компании из лида",
+    lead_company_id: "Лид: ID компании",
+    lead_company_name: "Лид: Название компании из справочника",
+    lead_contact_id: "Лид: ID контакта",
+    lead_status_id: "Лид: ID статуса лида",
+    lead_status_name: "Лид: Название статуса",
+    lead_status_description: "Лид: Описание статуса",
+    lead_status_semantic_id: "Лид: Семантический статус (S/P/F)",
+    lead_status_semantic_name: "Лид: Семантическое название статуса",
+    lead_source_id: "Лид: ID источника лида",
+    lead_source_name: "Лид: Название источника лида",
+    lead_source_description: "Лид: Описание источника",
+    lead_post: "Лид: Должность",
+    lead_comments: "Лид: Комментарии",
+    lead_is_return_customer: "Лид: Признак повторного клиента",
+    lead_birthdate: "Лид: Дата рождения",
+    lead_currency_id: "Лид: Валюта",
+    lead_opportunity: "Лид: Сумма потенциальной сделки",
+    lead_is_manual_opportunity: "Лид: Сумма введена вручную",
+    lead_has_phone: "Лид: Наличие телефона",
+    lead_has_email: "Лид: Наличие email",
+    lead_has_imol: "Лид: Наличие онлайн-чата",
+    lead_assigned_by_id: "Лид: ID назначенного ответственного",
+    lead_created_by_id: "Лид: ID создавшего пользователя",
+    lead_modify_by_id: "Лид: ID последнего изменившего",
+    lead_date_create: "Лид: Дата создания",
+    lead_date_modify: "Лид: Дата изменения",
+    lead_date_closed: "Лид: Дата завершения",
+    lead_moved_by_id: "Лид: ID пользователя, изменившего стадию",
+    lead_moved_time: "Лид: Дата последнего изменения стадии",
+    lead_last_activity_by: "Лид: ID пользователя последней активности",
+    lead_last_activity_time: "Лид: Дата последней активности",
+    lead_address: "Лид: Адрес (строка 1)",
+    lead_address_2: "Лид: Адрес (строка 2)",
+    lead_address_city: "Лид: Город",
+    lead_address_postal_code: "Лид: Почтовый индекс",
+    lead_address_region: "Лид: Регион",
+    lead_address_province: "Лид: Провинция",
+    lead_address_country: "Лид: Страна",
+    lead_address_country_code: "Лид: Код страны",
+    lead_address_loc_addr_id: "Лид: ID локального адреса",
+    lead_opened: "Лид: Открыт для всех",
+    lead_originator_id: "Лид: ID интеграции",
+    lead_origin_id: "Лид: Внешний ID",
+    lead_utm_source: "Лид: UTM source",
+    lead_utm_medium: "Лид: UTM medium",
+    lead_utm_campaign: "Лид: UTM campaign",
+    lead_utm_content: "Лид: UTM content",
+    lead_utm_term: "Лид: UTM term",
+    lead_product_type: "Лид: Тип продукта",
+    lead_rs_utm_source: "Лид: Источник RS",
+    lead_rs_utm_medium: "Лид: Канал RS",
+    lead_rs_utm_campaign: "Лид: Кампания RS",
+    lead_rs_utm_term: "Лид: Ключевое слово RS",
+    lead_rs_utm_content: "Лид: Контент RS",
+    lead_rs_google_client_id: "Лид: Google Client ID",
+    lead_required_fields: "Лид: Обязательные поля",
+    lead_rejection_reason: "Лид: Причина брака",
+    lead_rs_project: "Лид: Проект RS",
+    lead_assigned_by_name: "Лид: ФИО назначенного ответственного",
+    lead_created_by_name: "Лид: ФИО создавшего пользователя",
+    lead_modify_by_name: "Лид: ФИО последнего изменившего",
+    lead_moved_by_name: "Лид: ФИО пользователя, изменившего стадию",
+    lead_last_activity_by_name: "Лид: ФИО пользователя последней активности",
+    lead_utm_source_combined: "Лид: Объединённый UTM source",
+    lead_utm_medium_combined: "Лид: Объединённый UTM medium",
+    lead_utm_campaign_combined: "Лид: Объединённый UTM campaign",
+    lead_utm_content_combined: "Лид: Объединённый UTM content",
+    lead_utm_term_combined: "Лид: Объединённый UTM term",
+    lead_grp: "Лид: Имя группы объявлений",
+    lead_kw: "Лид: Текст ключевого слова",
+    lead_plc: "Лид: Тип размещения",
+    lead_dev: "Лид: Тип устройства",
+    lead_age: "Лид: Возраст аудитории",
+    lead_gen: "Лид: Пол аудитории",
+    lead_cid: "Лид: ID кампании",
+    lead_gid: "Лид: ID группы",
+    lead_kwid: "Лид: ID ключевого слова",
+    lead_aid: "Лид: ID объявления",
+    lead_cid_only: "Лид: ID кампании когда есть только она",
+    lead_rs_project_converted: "Лид: Нормализованный проект (например, Avers / Asylqala)",
+ 
+    deal_id: "Сделка: ID сделки",
+    deal_title: "Сделка: Название сделки",
+    deal_type_id: "Сделка: Тип сделки (ID)",
+    deal_stage_name: "Сделка: Название стадии",
+    deal_stage_id: "Сделка: ID стадии",
+    deal_probability: "Сделка: Вероятность успеха (%)",
+    deal_tax_value: "Сделка: Сумма налога",
+    deal_quote_id: "Сделка: ID коммерческого предложения",
+    deal_begin_date: "Сделка: Дата начала",
+    deal_close_date: "Сделка: Дата завершения",
+    deal_assigned_by_id: "Сделка: ID назначенного ответственного",
+    deal_assigned_by_name: "Сделка: ФИО назначенного ответственного",
+    deal_created_by_id: "Сделка: ID создавшего пользователя",
+    deal_created_by_name: "Сделка: ФИО создавшего пользователя",
+    deal_modify_by_id: "Сделка: ID последнего изменившего",
+    deal_modify_by_name: "Сделка: ФИО последнего изменившего",
+    deal_date_create: "Сделка: Дата создания",
+    deal_date_modify: "Сделка: Дата изменения",
+    deal_opened: "Сделка: Признак открытости",
+    deal_closed: "Сделка: Признак закрытости",
+    deal_comments: "Сделка: Комментарии",
+    deal_additional_info: "Сделка: Дополнительная информация",
+    deal_location_id: "Сделка: ID местоположения",
+    deal_category_id: "Сделка: ID категории",
+    deal_category_name: "Сделка: Название категории",
+    deal_stage_semantic_id: "Сделка: Семантический статус (S/P/F)",
+    deal_stage_semantic_name: "Сделка: Название семантического статуса",
+    deal_is_new: "Сделка: Признак новой сделки",
+    deal_is_recurring: "Сделка: Повторяющаяся сделка",
+    deal_is_return_customer: "Сделка: Повторный клиент",
+    deal_is_repeated_approach: "Сделка: Повторное обращение",
+    deal_originator_id: "Сделка: ID интеграции",
+    deal_origin_id: "Сделка: Внешний ID",
+    deal_moved_by_id: "Сделка: ID переместившего сделку",
+    deal_moved_by_name: "Сделка: ФИО переместившего сделку",
+    deal_moved_time: "Сделка: Дата перемещения сделки",
+    deal_last_activity_by: "Сделка: ID последнего взаимодействия",
+    deal_last_activity_by_name: "Сделка: ФИО последнего взаимодействия",
+    deal_last_activity_time: "Сделка: Время последней активности",
+    deal_payment_terms: "Сделка: Условия оплаты",
+    deal_delivery_terms: "Сделка: Условия доставки",
+    deal_delivery_deadline: "Сделка: Срок поставки",
+    deal_construction_site: "Сделка: Объект строительства",
+    deal_product_type: "Сделка: Тип товара",
+    deal_initial_responsible_deal: "Сделка: Изначальный ответственный",
+    deal_vat_type: "Сделка: Тип НДС",
+    deal_generate_documents: "Сделка: Генерация документов",
+    deal_rejection_reason: "Сделка: Причина отказа",
+    deal_purchase_location: "Сделка: Место закупки",
+    deal_comment: "Сделка: Комментарий по сделке",
+    deal_deal_key_person: "Сделка: Ключевое лицо",
+    deal_design_effort_hours: "Сделка: Часы проектирования",
+    deal_design_cost: "Сделка: Затраты на проектирование",
+    deal_contract_number: "Сделка: Номер договора",
+    deal_contract_date: "Сделка: Дата договора",
+    deal_contract_from: "Сделка: Договор от (дата)",
+    deal_first_responsive: "Сделка: Первый ответственный",
+    deal_deal_for_tasks: "Сделка: Используется для задач",
+    deal_deleted_in_1c: "Сделка: Удалена в 1С",
+    deal_our_company: "Сделка: Наша компания",
+    deal_project_manager: "Сделка: Руководитель проекта",
+    deal_chief_engineer: "Сделка: Главный инженер проекта",
+    deal_required_fields: "Сделка: Обязательные поля",
+    deal_cover_volume: "Сделка: Объём покрытий",
+    deal_concrete_volume: "Сделка: Объём бетона",
+    deal_lead_rejection_reason: "Сделка: Причина отказа лида",
+    deal_cover_type: "Сделка: Тип покрытия",
+    deal_last_approved_offer_id: "Сделка: ID последнего утверждённого КП",
+    deal_last_approved_offer_url: "Сделка: URL последнего утверждённого КП",
+    deal_last_approved_offer_download: "Сделка: Ссылка на последний утверждённый КП",
+    deal_transport_budget: "Сделка: Бюджет на перевозку",
+    deal_cost_card_created: "Сделка: Карточка затрат создана",
+    deal_transport_cost_card: "Сделка: Карточка затрат на перевозку",
+    deal_commission_card: "Сделка: Карточка комиссий",
+    deal_client_type: "Сделка: Тип клиента",
+    deal_delivery_region: "Сделка: Регион доставки",
+    deal_linked_design_tasks: "Сделка: Связанные проектные задачи",
+    deal_linked_sample_requests: "Сделка: Связанные заявки на образцы",
+    deal_terminal_processing: "Сделка: Терминальная обработка",
+    deal_previous_stage: "Сделка: Предыдущая стадия",
+    deal_implementation_contract: "Сделка: Договор реализации",
+    deal_implementation_spec: "Сделка: Спецификация реализации",
+    deal_specification: "Сделка: Спецификация",
+    deal_template_type: "Сделка: Тип шаблона",
+    deal_unique_specification: "Сделка: Уникальная спецификация",
+    deal_intermediate_commissions: "Сделка: Промежуточные комиссии",
+    deal_transport_bonus_card: "Сделка: Бонус за перевозку",
+    deal_support_tasks: "Сделка: Задачи поддержки",
+    deal_rs_project: "Сделка: Проект Bitrix RS",
+    deal_source_description: "Сделка: Описание источника",
+    deal_source_id: "Сделка: ID источника",
+    deal_source_name: "Сделка: Название источника",
+    deal_company_id: "Сделка: ID компании",
+    deal_company_name: "Сделка: Название компании",
+    deal_contact_id: "Сделка: ID контакта",
+    deal_contact_name: "Сделка: ФИО контакта",
+    deal_currency_id: "Сделка: Валюта",
+    deal_is_manual_opportunity: "Сделка: Сумма введена вручную",
+    deal_opportunity: "Сделка: Сумма потенциальной сделки",
+ 
+    ads_date: "Ads: Дата (день показа рекламы / создания лида)",
+    ads_platform: "Ads: Платформа рекламного кабинета",
+    ads_account_id: "Ads: Идентификатор аккаунта",
+    ads_account_name: "Ads: Название аккаунта",
+    ads_project: "Ads: Название проекта",
+    ads_campaign_name: "Ads: Название рекламной кампании",
+    ads_adgroup_name: "Ads: Название группы объявлений",
+    ads_campaign_type: "Ads: Тип кампании",
+    ads_impressions: "Ads: Количество показов (с учётом деления на лиды)",
+    ads_clicks: "Ads: Количество кликов (с учётом деления на лиды)",
+    ads_ctr: "Ads: CTR (клики / показы)",
+    ads_cost_usd: "Ads: Стоимость в USD (с учётом деления на лиды)",
+    ads_cost_kzt: "Ads: Стоимость в KZT (с учётом деления на лиды)",
+    ads_countt: "Ads: Количество записей в исходной таблице реклам по группе (campaign_id, adgroup_id, ad_id, date)"
+  }
+}
+
+WITH aggregated_ads AS (
+  SELECT
+    campaign_id AS lead_cid,
+    adgroup_id AS lead_gid,
+    ad_id      AS lead_aid,
+    date,
+    COUNT(*) AS countt,
+    SUM(impressions) AS ads_impressions,
+    SUM(clicks) AS ads_clicks,
+    SAFE_DIVIDE(SUM(clicks), NULLIF(SUM(impressions), 0)) AS ads_ctr,
+    SUM(cost_usd) AS ads_cost_usd,
+    SUM(cost_kzt) AS ads_cost_kzt,
+    ANY_VALUE(platform)       AS ads_platform,
+    ANY_VALUE(project)        AS ads_project,
+    ANY_VALUE(account_id)     AS ads_account_id,
+    ANY_VALUE(account_name)   AS ads_account_name,
+    ANY_VALUE(campaign_name)  AS ads_campaign_name,
+    ANY_VALUE(adgroup_name)   AS ads_adgroup_name,
+    ANY_VALUE(campaign_type)  AS ads_campaign_type
+  FROM `galery-22579.Test_google_ads.unified_ads_report_view`
+  GROUP BY campaign_id, adgroup_id, ad_id, date
+),
+
+ads_with_factor AS (
+  SELECT
+    ads.*,
+    lc.leads_per_ads_group,
+    CASE
+      WHEN lc.leads_per_ads_group IS NULL OR lc.leads_per_ads_group IN (0, 1)
+        THEN 1
+      ELSE SAFE_DIVIDE(1, lc.leads_per_ads_group)
+    END AS ads_div_factor
+  FROM aggregated_ads AS ads
+  LEFT JOIN (
+    SELECT
+      lead_cid,
+      lead_gid,
+      lead_aid,
+      lead_date_create,
+      COUNT(*) AS leads_per_ads_group
+    FROM ${ref("leads_deals_joined")}
+    GROUP BY lead_cid, lead_gid, lead_aid, lead_date_create
+  ) AS lc
+    ON ads.lead_cid = lc.lead_cid
+   AND ads.lead_gid = lc.lead_gid
+   AND ads.lead_aid = lc.lead_aid
+   AND ads.date     = lc.lead_date_create
+),
+
+ads_group AS (
+  SELECT
+    lead_cid,
+    lead_gid,
+    date,
+    ANY_VALUE(ads_platform)      AS ads_platform,
+    ANY_VALUE(ads_project)       AS ads_project,
+    ANY_VALUE(ads_account_id)    AS ads_account_id,
+    ANY_VALUE(ads_account_name)  AS ads_account_name,
+    ANY_VALUE(ads_campaign_name) AS ads_campaign_name,
+    ANY_VALUE(ads_adgroup_name)  AS ads_adgroup_name,
+    ANY_VALUE(ads_campaign_type) AS ads_campaign_type
+  FROM aggregated_ads
+  GROUP BY lead_cid, lead_gid, date
+),
+
+ads_campaign AS (
+  SELECT
+    lead_cid,
+    date,
+    ANY_VALUE(ads_platform)      AS ads_platform,
+    ANY_VALUE(ads_project)       AS ads_project,
+    ANY_VALUE(ads_account_id)    AS ads_account_id,
+    ANY_VALUE(ads_account_name)  AS ads_account_name,
+    ANY_VALUE(ads_campaign_name) AS ads_campaign_name,
+    ANY_VALUE(ads_campaign_type) AS ads_campaign_type
+  FROM aggregated_ads
+  GROUP BY lead_cid, date
+),
+
+project_converted AS (
+  SELECT
+    *,
+    CASE
+      WHEN lead_rs_project = 'asylqala.kz' THEN 'Asylqala'
+      WHEN lead_rs_project = 'avers.kz'    THEN 'Avers'
+      ELSE NULL
+    END AS lead_rs_project_converted
+  FROM ${ref("leads_deals_joined")}
+)
+
+SELECT
+  main.*,
+
+  COALESCE(ads.date, main.lead_date_create) AS ads_date,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_platform
+    ELSE COALESCE(
+      ads.ads_platform,
+      ads_group.ads_platform,
+      ads_campaign.ads_platform,
+      dict.ads_platform
+    )
+  END AS ads_platform,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_project
+    ELSE COALESCE(
+      ads.ads_project,
+      ads_group.ads_project,
+      ads_campaign.ads_project,
+      dict.ads_project
+    )
+  END AS ads_project,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_account_name
+    ELSE COALESCE(
+      ads.ads_account_name,
+      ads_group.ads_account_name,
+      ads_campaign.ads_account_name,
+      dict.ads_account_name
+    )
+  END AS ads_account_name,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_account_id
+    ELSE COALESCE(
+      ads.ads_account_id,
+      ads_group.ads_account_id,
+      ads_campaign.ads_account_id
+    )
+  END AS ads_account_id,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_campaign_name
+    WHEN main.lead_cid IS NOT NULL THEN
+      COALESCE(
+        ads.ads_campaign_name,
+        ads_group.ads_campaign_name,
+        ads_campaign.ads_campaign_name
+      )
+    ELSE NULL
+  END AS ads_campaign_name,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_campaign_type
+    WHEN main.lead_cid IS NOT NULL THEN
+      COALESCE(
+        ads.ads_campaign_type,
+        ads_group.ads_campaign_type,
+        ads_campaign.ads_campaign_type
+      )
+    ELSE NULL
+  END AS ads_campaign_type,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_adgroup_name
+    WHEN main.lead_cid IS NOT NULL AND main.lead_gid IS NOT NULL THEN
+      COALESCE(
+        ads.ads_adgroup_name,
+        ads_group.ads_adgroup_name
+      )
+    ELSE NULL
+  END AS ads_adgroup_name,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.countt
+    WHEN main.lead_cid IS NOT NULL AND main.lead_gid IS NOT NULL AND main.lead_aid IS NOT NULL
+      THEN ads.countt * ads.ads_div_factor
+    ELSE NULL
+  END AS ads_countt,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_impressions
+    WHEN main.lead_cid IS NOT NULL AND main.lead_gid IS NOT NULL AND main.lead_aid IS NOT NULL
+      THEN ads.ads_impressions * ads.ads_div_factor
+    ELSE NULL
+  END AS ads_impressions,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_clicks
+    WHEN main.lead_cid IS NOT NULL AND main.lead_gid IS NOT NULL AND main.lead_aid IS NOT NULL
+      THEN ads.ads_clicks * ads.ads_div_factor
+    ELSE NULL
+  END AS ads_clicks,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_ctr
+    WHEN main.lead_cid IS NOT NULL AND main.lead_gid IS NOT NULL AND main.lead_aid IS NOT NULL
+      THEN ads.ads_ctr
+    ELSE 0
+  END AS ads_ctr,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_cost_usd
+    WHEN main.lead_cid IS NOT NULL AND main.lead_gid IS NOT NULL AND main.lead_aid IS NOT NULL
+      THEN ads.ads_cost_usd * ads.ads_div_factor
+    ELSE NULL
+  END AS ads_cost_usd,
+
+  CASE
+    WHEN main.lead_id IS NULL THEN ads.ads_cost_kzt
+    WHEN main.lead_cid IS NOT NULL AND main.lead_gid IS NOT NULL AND main.lead_aid IS NOT NULL
+      THEN ads.ads_cost_kzt * ads.ads_div_factor
+    ELSE NULL
+  END AS ads_cost_kzt
+
+FROM ads_with_factor AS ads
+FULL OUTER JOIN project_converted AS main
+  ON main.lead_cid        = ads.lead_cid
+ AND main.lead_gid        = ads.lead_gid
+ AND main.lead_aid        = ads.lead_aid
+ AND main.lead_date_create = ads.date
+
+LEFT JOIN ads_group
+  ON main.lead_cid        = ads_group.lead_cid
+ AND main.lead_gid        = ads_group.lead_gid
+ AND main.lead_date_create = ads_group.date
+
+LEFT JOIN ads_campaign
+  ON main.lead_cid        = ads_campaign.lead_cid
+ AND main.lead_date_create = ads_campaign.date
+
+LEFT JOIN  ${ref("external_utm_ads_dict")}  AS dict
+  ON (main.lead_rs_project_converted = dict.lead_rs_project_converted
+      OR (main.lead_rs_project_converted IS NULL AND dict.lead_rs_project_converted IS NULL))
+ AND (main.lead_utm_source_combined = dict.lead_utm_source_combined
+      OR (main.lead_utm_source_combined IS NULL AND dict.lead_utm_source_combined IS NULL))
+ And (main.lead_utm_medium_combined = dict.lead_utm_medium_combined
+      OR (main.lead_utm_medium_combined IS NULL AND dict.lead_utm_medium_combined IS NULL))
+ And (main.lead_utm_campaign_combined = dict.lead_utm_campaign_combined
+      OR (main.lead_utm_campaign_combined IS NULL AND dict.lead_utm_campaign_combined IS NULL))
+ And (main.lead_utm_content_combined = dict.lead_utm_content_combined
+      OR (main.lead_utm_content_combined IS NULL AND dict.lead_utm_content_combined IS NULL))
+ And (main.lead_utm_term_combined = dict.lead_utm_term_combined
+      OR (main.lead_utm_term_combined IS NULL AND dict.lead_utm_term_combined IS NULL))
