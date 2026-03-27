@@ -1,0 +1,143 @@
+config {
+  type: "operations",
+  schema: "gal_bsu_pp3",
+  name: "history_bsu_pp3_arc_components",
+  hasOutput: true,
+  dependencies: ["staging_bsu_pp3_arc_components"],
+  tags: ["bsu_pp3_arc_components", "history", "scd2"],
+
+  description: "BSU PP3 ARC_COMPONENTS — SCD2 история компонентов замеса. Surrogate key = SHA256(ID). Поддерживает версионность через is_current, valid_from, valid_to.",
+
+  columns: {
+    ID: "Первичный идентификатор записи компонента.",
+    ZAMID: "Идентификатор замеса (связь с ARC_ZAMES).",
+    COMPNAME: "Название компонента смеси.",
+    RCPWEIGHT: "Рецептурный вес компонента.",
+    PLANWEIGHT: "Плановый вес компонента.",
+    EXECUTIONWEIGHT: "Вес по исполнению.",
+    DOBDZ: "Дополнительный показатель.",
+    FACTWEIGHT: "Фактический вес компонента.",
+    SOURCES: "Источник компонента.",
+    STATE: "Состояние компонента.",
+    COMPGR: "Группа компонента.",
+    RCPDENSITY: "Рецептурная плотность.",
+    REALDENSITY: "Фактическая плотность.",
+    RCPHUMID: "Рецептурная влажность.",
+    REALHUMID: "Фактическая влажность.",
+    DELAY: "Задержка выполнения.",
+    COMPOSB: "Тип/признак компонента.",
+    surrogate_key: "Surrogate key = SHA256(ID).",
+    is_current: "TRUE — текущая версия записи.",
+    valid_from: "Дата начала действия версии.",
+    valid_to: "Дата окончания действия версии (NULL — актуальная запись)."
+  }
+}
+
+-- =====================================================
+-- ШАГ 1. Закрываем изменённые текущие записи
+-- =====================================================
+
+UPDATE `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_components` h
+SET
+  is_current = FALSE,
+  valid_to   = CURRENT_DATETIME('Asia/Almaty')
+WHERE
+  h.is_current = TRUE
+  AND EXISTS (
+    SELECT 1
+    FROM ${ref("staging_bsu_pp3_arc_components")} s
+    WHERE
+      TO_HEX(SHA256(CAST(s.ID AS STRING))) = h.surrogate_key
+      AND (
+           s.ZAMID           IS DISTINCT FROM h.ZAMID
+        OR s.COMPNAME        IS DISTINCT FROM h.COMPNAME
+        OR s.RCPWEIGHT       IS DISTINCT FROM h.RCPWEIGHT
+        OR s.PLANWEIGHT      IS DISTINCT FROM h.PLANWEIGHT
+        OR s.EXECUTIONWEIGHT IS DISTINCT FROM h.EXECUTIONWEIGHT
+        OR s.DOBDZ           IS DISTINCT FROM h.DOBDZ
+        OR s.FACTWEIGHT      IS DISTINCT FROM h.FACTWEIGHT
+        OR s.SOURCES         IS DISTINCT FROM h.SOURCES
+        OR s.STATE           IS DISTINCT FROM h.STATE
+        OR s.COMPGR          IS DISTINCT FROM h.COMPGR
+        OR s.RCPDENSITY      IS DISTINCT FROM h.RCPDENSITY
+        OR s.REALDENSITY     IS DISTINCT FROM h.REALDENSITY
+        OR s.RCPHUMID        IS DISTINCT FROM h.RCPHUMID
+        OR s.REALHUMID       IS DISTINCT FROM h.REALHUMID
+        OR s.DELAY           IS DISTINCT FROM h.DELAY
+        OR s.COMPOSB         IS DISTINCT FROM h.COMPOSB
+      )
+  );
+
+-- =====================================================
+-- ШАГ 2. Вставляем новые и изменённые записи
+-- =====================================================
+
+INSERT INTO `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_components` (
+  ID,
+  ZAMID,
+  COMPNAME,
+  RCPWEIGHT,
+  PLANWEIGHT,
+  EXECUTIONWEIGHT,
+  DOBDZ,
+  FACTWEIGHT,
+  SOURCES,
+  STATE,
+  COMPGR,
+  RCPDENSITY,
+  REALDENSITY,
+  RCPHUMID,
+  REALHUMID,
+  DELAY,
+  COMPOSB,
+  surrogate_key,
+  is_current,
+  valid_from,
+  valid_to
+)
+SELECT
+  s.ID,
+  s.ZAMID,
+  s.COMPNAME,
+  s.RCPWEIGHT,
+  s.PLANWEIGHT,
+  s.EXECUTIONWEIGHT,
+  s.DOBDZ,
+  s.FACTWEIGHT,
+  s.SOURCES,
+  s.STATE,
+  s.COMPGR,
+  s.RCPDENSITY,
+  s.REALDENSITY,
+  s.RCPHUMID,
+  s.REALHUMID,
+  s.DELAY,
+  s.COMPOSB,
+  TO_HEX(SHA256(CAST(s.ID AS STRING))) AS surrogate_key,
+  TRUE,
+  CURRENT_DATETIME('Asia/Almaty'),
+  NULL
+FROM ${ref("staging_bsu_pp3_arc_components")} s
+LEFT JOIN `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_components` h
+  ON h.surrogate_key = TO_HEX(SHA256(CAST(s.ID AS STRING)))
+ AND h.is_current = TRUE
+WHERE
+     h.surrogate_key IS NULL
+  OR (
+       s.ZAMID           IS DISTINCT FROM h.ZAMID
+    OR s.COMPNAME        IS DISTINCT FROM h.COMPNAME
+    OR s.RCPWEIGHT       IS DISTINCT FROM h.RCPWEIGHT
+    OR s.PLANWEIGHT      IS DISTINCT FROM h.PLANWEIGHT
+    OR s.EXECUTIONWEIGHT IS DISTINCT FROM h.EXECUTIONWEIGHT
+    OR s.DOBDZ           IS DISTINCT FROM h.DOBDZ
+    OR s.FACTWEIGHT      IS DISTINCT FROM h.FACTWEIGHT
+    OR s.SOURCES         IS DISTINCT FROM h.SOURCES
+    OR s.STATE           IS DISTINCT FROM h.STATE
+    OR s.COMPGR          IS DISTINCT FROM h.COMPGR
+    OR s.RCPDENSITY      IS DISTINCT FROM h.RCPDENSITY
+    OR s.REALDENSITY     IS DISTINCT FROM h.REALDENSITY
+    OR s.RCPHUMID        IS DISTINCT FROM h.RCPHUMID
+    OR s.REALHUMID       IS DISTINCT FROM h.REALHUMID
+    OR s.DELAY           IS DISTINCT FROM h.DELAY
+    OR s.COMPOSB         IS DISTINCT FROM h.COMPOSB
+     )
