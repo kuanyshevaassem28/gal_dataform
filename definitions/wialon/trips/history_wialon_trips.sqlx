@@ -1,0 +1,247 @@
+config {
+  type: "operations",
+  schema: "gal_wialon",
+  name: "history_wialon_trips",
+  hasOutput: true,
+  tags: ["wialon_trips", "wialon", "trips", "history", "scd2"], 
+  description: "Wialon — SCD2 история поездок (MERGE U/I). surrogate_key = number|name|date.",
+
+  columns: {
+    number:          "Номер строки Wialon-отчёта",
+    level:           "Уровень строки (3 = поездка)",
+    parent_number:   "Номер родительской строки (level 2)",
+    subrows_count:   "Количество подстрок",
+    row_n:           "Порядковый номер строки",
+    date:            "Дата поездки",
+    name:            "Название объекта / трека",
+    start_type:      "Тип начала (start)",
+    start_pos:       "Координаты/адрес начала",
+    end_type:        "Тип окончания (end)",
+    end_pos:         "Координаты/адрес окончания",
+    distance_km:     "Дистанция, км",
+    avg_speed_km_h:  "Средняя скорость, км/ч",
+    max_speed_km_h:  "Максимальная скорость, км/ч",
+    total_time_sec:  "Длительность поездки, сек",
+    _ingested_at:    "Время загрузки сырого отчёта",
+    table_index:     "Индекс таблицы Wialon",
+    surrogate_key:   "Суррогатный ключ: number|name|date",
+    valid_from:      "Начало действия версии записи",
+    valid_to:        "Конец действия версии записи",
+    is_current:      "Текущая версия (TRUE — актуальная)"
+  }
+}
+
+DECLARE run_dt DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty");
+
+-- создаём таблицу если нет
+CREATE TABLE IF NOT EXISTS ${self()} (
+  number STRING,
+  level INT64,
+  parent_number STRING,
+  subrows_count INT64,
+  row_n INT64,
+  date STRING,
+  name STRING,
+  start_type STRING,
+  start_pos STRING,
+  end_type STRING,
+  end_pos STRING,
+  distance_km FLOAT64,
+  avg_speed_km_h FLOAT64,
+  max_speed_km_h FLOAT64,
+  total_time_sec INT64,
+  _ingested_at DATETIME,
+  table_index INT64,
+  surrogate_key STRING,
+  is_current BOOL,
+  valid_from DATETIME,
+  valid_to DATETIME
+);
+
+MERGE ${self()} t
+USING (
+
+  WITH s AS (
+    SELECT
+      number,
+      level,
+      parent_number,
+      subrows_count,
+      row_n,
+      date,
+      name,
+      start_type,
+      start_pos,
+      end_type,
+      end_pos,
+      distance_km,
+      avg_speed_km_h,
+      max_speed_km_h,
+      total_time_sec,
+      _ingested_at,
+      table_index,
+ 
+      TO_HEX(SHA256(
+        COALESCE(number, '') || '|' ||
+        COALESCE(name,   '') || '|' ||
+        COALESCE(CAST(date AS STRING), '')
+      )) AS surrogate_key
+
+    FROM ${ref("staging_wialon_trips")}
+  ),
+
+  h_cur AS (
+    SELECT *
+    FROM ${self()}
+    WHERE is_current = TRUE
+  ),
+
+  diff AS (
+    SELECT
+      s.*,
+      h_cur.valid_from AS old_valid_from,
+
+      -- новая запись
+      (h_cur.surrogate_key IS NULL) AS is_new,
+
+      -- изменились данные поездки
+      (
+        h_cur.surrogate_key IS NOT NULL AND (
+             s.start_type      IS DISTINCT FROM h_cur.start_type
+          OR s.start_pos       IS DISTINCT FROM h_cur.start_pos
+          OR s.end_type        IS DISTINCT FROM h_cur.end_type
+          OR s.end_pos         IS DISTINCT FROM h_cur.end_pos
+          OR s.distance_km     IS DISTINCT FROM h_cur.distance_km
+          OR s.avg_speed_km_h  IS DISTINCT FROM h_cur.avg_speed_km_h
+          OR s.max_speed_km_h  IS DISTINCT FROM h_cur.max_speed_km_h
+          OR s.total_time_sec  IS DISTINCT FROM h_cur.total_time_sec
+        )
+      ) AS is_changed
+
+    FROM s
+    LEFT JOIN h_cur
+      ON s.surrogate_key = h_cur.surrogate_key
+  ),
+
+  rows_to_merge AS (
+
+    -- 🔴 закрываем старую версию
+    SELECT
+      surrogate_key,
+      old_valid_from AS valid_from,
+      run_dt AS valid_to,
+      FALSE AS is_current,
+
+      NULL AS number,
+      NULL AS level,
+      NULL AS parent_number,
+      NULL AS subrows_count,
+      NULL AS row_n,
+      NULL AS date,
+      NULL AS name,
+      NULL AS start_type,
+      NULL AS start_pos,
+      NULL AS end_type,
+      NULL AS end_pos,
+      NULL AS distance_km,
+      NULL AS avg_speed_km_h,
+      NULL AS max_speed_km_h,
+      NULL AS total_time_sec,
+      NULL AS _ingested_at,
+      NULL AS table_index,
+
+      'U' AS op
+    FROM diff
+    WHERE is_changed = TRUE
+
+    UNION ALL
+
+    -- 🟢 вставляем новую версию
+    SELECT
+      surrogate_key,
+      run_dt AS valid_from,
+      NULL AS valid_to,
+      TRUE AS is_current,
+
+      number,
+      level,
+      parent_number,
+      subrows_count,
+      row_n,
+      date,
+      name,
+      start_type,
+      start_pos,
+      end_type,
+      end_pos,
+      distance_km,
+      avg_speed_km_h,
+      max_speed_km_h,
+      total_time_sec,
+      _ingested_at,
+      table_index,
+
+      'I' AS op
+    FROM diff
+    WHERE is_new = TRUE OR is_changed = TRUE
+  )
+
+  SELECT * FROM rows_to_merge
+
+) s
+
+ON t.surrogate_key = s.surrogate_key
+AND t.valid_from   = s.valid_from
+
+WHEN MATCHED AND s.op = 'U' THEN
+  UPDATE SET
+    is_current = FALSE,
+    valid_to   = s.valid_to
+
+WHEN NOT MATCHED AND s.op = 'I' THEN
+  INSERT (
+    number,
+    level,
+    parent_number,
+    subrows_count,
+    row_n,
+    date,
+    name,
+    start_type,
+    start_pos,
+    end_type,
+    end_pos,
+    distance_km,
+    avg_speed_km_h,
+    max_speed_km_h,
+    total_time_sec,
+    _ingested_at,
+    table_index,
+    surrogate_key,
+    is_current,
+    valid_from,
+    valid_to
+  )
+  VALUES (
+    s.number,
+    s.level,
+    s.parent_number,
+    s.subrows_count,
+    s.row_n,
+    s.date,
+    s.name,
+    s.start_type,
+    s.start_pos,
+    s.end_type,
+    s.end_pos,
+    s.distance_km,
+    s.avg_speed_km_h,
+    s.max_speed_km_h,
+    s.total_time_sec,
+    s._ingested_at,
+    s.table_index,
+    s.surrogate_key,
+    TRUE,
+    s.valid_from,
+    NULL
+  );
