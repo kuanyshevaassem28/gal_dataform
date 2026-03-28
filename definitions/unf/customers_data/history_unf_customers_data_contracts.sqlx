@@ -1,0 +1,194 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_customers_data_contracts",
+  tags: ["unf_customers_data_contracts", "history", "scd2"],
+  description: "UNF — история договоров (contracts) + контакты контрагента (contact_*). Закрываем is_current по data_changes, затем вставляем новые версии. surrogate_key = SHA256(contract_id|customer_id).",
+  uniqueKey: ["surrogate_key", "valid_from"],
+  columns: {
+    customer_id: "ID контрагента",
+    customer_name: "Наименование контрагента",
+    customer_iin_bin: "ИИН/БИН",
+    customer_group_id: "ID группы контрагентов",
+    customer_group_name: "Группа контрагентов",
+    contract_id: "ID договора",
+    contract_code: "Код договора",
+    contract_name: "Наименование договора",
+    contract_deleted: "Пометка удаления",
+    contract_type: "Тип договора",
+    contract_currency_id: "ID валюты",
+    contract_currency_name: "Валюта",
+    contract_number: "Номер договора",
+    contract_begin_date: "Дата начала",
+    contract_end_date: "Дата окончания",
+    contract_organization_id: "ID организации",
+    contract_organization_name: "Организация",
+    contract_pricetype_id: "ID типа цены",
+    contract_pricetype_name: "Тип цены",
+    contract_is_signed: "Подписан",
+    contract_manager_id: "ID менеджера",
+    contract_manager_name: "Менеджер",
+    contract_buyer_payment_period: "Отсрочка покупателя",
+    contract_seller_payment_period: "Отсрочка поставщику",
+    contract_for_transfer_between_organizations: "Передача между орг.",
+    contract_for_acquiring: "Эквайринг",
+    contract_object_type: "Тип объекта",
+    contract_control_categories: "Контроль категорий",
+    contract_nomenclature_category_group_name: "Группа категорий номенклатуры",
+    contract_debt_limit_is_set: "Лимит долга включен",
+    contract_debt_limit_begin_date: "Начало лимита долга",
+    contract_debt_limit_end_date: "Конец лимита долга",
+    contract_debt_limit_sum: "Сумма лимита долга",
+    contract_cred_limit_is_set: "Кредитный лимит включен",
+    contract_cred_limit_begin_date: "Начало кредитного лимита",
+    contract_cred_limit_sum: "Сумма кредитного лимита",
+    contract_debt_upperlimit_is_set: "Верхний лимит долга включен",
+    contract_debt_upperlimit_end_date: "Конец верхнего лимита долга",
+    contract_debt_upperlimit_sum: "Сумма верхнего лимита долга",
+    contact_legal_address: "Юридический адрес",
+    contact_phone: "Телефон",
+    contact_actual_address: "Фактический адрес",
+    contact_email: "Email",
+    contact_delivery_address: "Адрес доставки",
+    valid_from: "Начало версии",
+    valid_to: "Конец версии",
+    is_current: "Актуальная версия",
+    surrogate_key: "Surrogate key"
+  }
+}
+
+pre_operations {
+  UPDATE `${dataform.projectConfig.defaultDatabase}.gal_unf.history_unf_customers_data_contracts`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND customer_id IN (
+      SELECT CAST(object_id AS STRING)
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Справочник.Контрагенты"
+    );
+}
+
+WITH S AS (
+  SELECT
+    CAST(customer_id AS STRING) AS customer_id,
+    CAST(customer_name AS STRING) AS customer_name,
+    CAST(customer_iin_bin AS STRING) AS customer_iin_bin,
+    CAST(customer_group_id AS STRING) AS customer_group_id,
+    CAST(customer_group_name AS STRING) AS customer_group_name,
+
+    CAST(contract_id AS STRING) AS contract_id,
+    CAST(contract_code AS STRING) AS contract_code,
+    CAST(contract_name AS STRING) AS contract_name,
+    SAFE_CAST(contract_deleted AS BOOL) AS contract_deleted,
+    CAST(contract_type AS STRING) AS contract_type,
+    CAST(contract_currency_id AS STRING) AS contract_currency_id,
+    CAST(contract_currency_name AS STRING) AS contract_currency_name,
+    CAST(contract_number AS STRING) AS contract_number,
+    CAST(contract_begin_date AS STRING) AS contract_begin_date,
+    CAST(contract_end_date AS STRING) AS contract_end_date,
+    CAST(contract_organization_id AS STRING) AS contract_organization_id,
+    CAST(contract_organization_name AS STRING) AS contract_organization_name,
+    CAST(contract_pricetype_id AS STRING) AS contract_pricetype_id,
+    CAST(contract_pricetype_name AS STRING) AS contract_pricetype_name,
+    SAFE_CAST(contract_is_signed AS BOOL) AS contract_is_signed,
+    CAST(contract_manager_id AS STRING) AS contract_manager_id,
+    CAST(contract_manager_name AS STRING) AS contract_manager_name,
+
+    SAFE_CAST(contract_buyer_payment_period AS INT64) AS contract_buyer_payment_period,
+    SAFE_CAST(contract_seller_payment_period AS INT64) AS contract_seller_payment_period,
+    SAFE_CAST(contract_for_transfer_between_organizations AS BOOL) AS contract_for_transfer_between_organizations,
+    SAFE_CAST(contract_for_acquiring AS BOOL) AS contract_for_acquiring,
+
+    CAST(contract_object_type AS STRING) AS contract_object_type,
+    SAFE_CAST(contract_control_categories AS BOOL) AS contract_control_categories,
+    CAST(contract_nomenclature_category_group_name AS STRING) AS contract_nomenclature_category_group_name,
+
+    SAFE_CAST(contract_debt_limit_is_set AS BOOL) AS contract_debt_limit_is_set,
+    CAST(contract_debt_limit_begin_date AS STRING) AS contract_debt_limit_begin_date,
+    CAST(contract_debt_limit_end_date AS STRING) AS contract_debt_limit_end_date,
+    SAFE_CAST(contract_debt_limit_sum AS FLOAT64) AS contract_debt_limit_sum,
+
+    SAFE_CAST(contract_cred_limit_is_set AS BOOL) AS contract_cred_limit_is_set,
+    CAST(contract_cred_limit_begin_date AS STRING) AS contract_cred_limit_begin_date,
+    SAFE_CAST(contract_cred_limit_sum AS FLOAT64) AS contract_cred_limit_sum,
+
+    SAFE_CAST(contract_debt_upperlimit_is_set AS BOOL) AS contract_debt_upperlimit_is_set,
+    CAST(contract_debt_upperlimit_end_date AS STRING) AS contract_debt_upperlimit_end_date,
+    SAFE_CAST(contract_debt_upperlimit_sum AS INT64) AS contract_debt_upperlimit_sum,
+
+    CAST(contact_legal_address AS STRING) AS contact_legal_address,
+    CAST(contact_phone AS STRING) AS contact_phone,
+    CAST(contact_actual_address AS STRING) AS contact_actual_address,
+    CAST(contact_email AS STRING) AS contact_email,
+    CAST(contact_delivery_address AS STRING) AS contact_delivery_address,
+
+    TO_HEX(SHA256(
+      COALESCE(CAST(contract_id AS STRING), '') || '|' ||
+      COALESCE(CAST(customer_id AS STRING), '')
+    )) AS surrogate_key
+  FROM ${ref("external_staging_unf_customers_data_contracts")}
+  WHERE contract_id IS NOT NULL
+)
+
+SELECT
+  customer_id,
+  customer_name,
+  customer_iin_bin,
+  customer_group_id,
+  customer_group_name,
+
+  contract_id,
+  contract_code,
+  contract_name,
+  contract_deleted,
+  contract_type,
+  contract_currency_id,
+  contract_currency_name,
+  contract_number,
+  contract_begin_date,
+  contract_end_date,
+  contract_organization_id,
+  contract_organization_name,
+  contract_pricetype_id,
+  contract_pricetype_name,
+  contract_is_signed,
+  contract_manager_id,
+  contract_manager_name,
+  contract_buyer_payment_period,
+  contract_seller_payment_period,
+  contract_for_transfer_between_organizations,
+  contract_for_acquiring,
+  contract_object_type,
+  contract_control_categories,
+  contract_nomenclature_category_group_name,
+  contract_debt_limit_is_set,
+  contract_debt_limit_begin_date,
+  contract_debt_limit_end_date,
+  contract_debt_limit_sum,
+  contract_cred_limit_is_set,
+  contract_cred_limit_begin_date,
+  contract_cred_limit_sum,
+  contract_debt_upperlimit_is_set,
+  contract_debt_upperlimit_end_date,
+  contract_debt_upperlimit_sum,
+
+  contact_legal_address,
+  contact_phone,
+  contact_actual_address,
+  contact_email,
+  contact_delivery_address,
+
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  surrogate_key
+FROM S
+${when(incremental(), `
+WHERE customer_id IN (
+  SELECT CAST(object_id AS STRING)
+  FROM \`galery-22579.gal_unf.external_staging_unf_data_changes\`
+  WHERE object_type = "Справочник.Контрагенты"
+)
+`, ``)}
