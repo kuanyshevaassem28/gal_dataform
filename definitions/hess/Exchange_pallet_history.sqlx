@@ -1,0 +1,314 @@
+config {
+  type: "incremental",
+  schema: "gal_hess_statistic",
+  name: "Exchange_pallet_history",
+  tags: ["hess_pallet", "hess", "pallet", "history", "scd2"],
+  description: "HESS — история паллет (Exchange_pallet_history) с SCD2 по (ID, pallet_SID).",
+  uniqueKey: ["ID", "pallet_SID", "valid_from"],
+
+  columns: {
+    ID:              "Идентификатор записи",
+    pallet_SID:      "SID паллеты",
+    charge_SID_dry:  "SID сухого заряда",
+    Product_name:    "Наименование продукта",
+    Product_number:  "Номер продукта",
+    job_number:      "Номер job'а",
+    timestamp:       "Момент события (TIMESTAMP)",
+    count:           "Общее количество",
+    count_1:         "Количество в зоне 1",
+    count_2:         "Количество в зоне 2",
+    count_3:         "Количество в зоне 3",
+    layer_SID_1:     "SID слоя 1",
+    layer_SID_2:     "SID слоя 2",
+    layer_SID_3:     "SID слоя 3",
+    layer_SID_4:     "SID слоя 4",
+    layer_SID_5:     "SID слоя 5",
+    layer_SID_6:     "SID слоя 6",
+    layer_SID_7:     "SID слоя 7",
+    layer_SID_8:     "SID слоя 8",
+    layer_SID_9:     "SID слоя 9",
+    layer_SID_10:    "SID слоя 10",
+    layer_SID_11:    "SID слоя 11",
+    layer_SID_12:    "SID слоя 12",
+    layer_SID_13:    "SID слоя 13",
+    layer_SID_14:    "SID слоя 14",
+    layer_SID_15:    "SID слоя 15",
+    layer_SID_16:    "SID слоя 16",
+    layer_SID_17:    "SID слоя 17",
+    layer_SID_18:    "SID слоя 18",
+    layer_SID_19:    "SID слоя 19",
+    layer_SID_20:    "SID слоя 20",
+    layer_SID_21:    "SID слоя 21",
+    layer_SID_22:    "SID слоя 22",
+    layer_SID_23:    "SID слоя 23",
+    layer_SID_24:    "SID слоя 24",
+    layer_SID_25:    "SID слоя 25",
+    exchange_date:   "Дата/время обмена паллеты (TIMESTAMP)",
+
+    valid_from:      "Начало действия версии записи (SCD2)",
+    valid_to:        "Конец действия версии записи (SCD2)",
+    Is_current:      "Флаг актуальной версии"
+  }
+} 
+
+${when(incremental(), ` 
+
+WITH S_SRC AS (
+  SELECT
+    ID,
+    pallet_SID,
+    charge_SID_dry,
+    Product_name,
+    Product_number,
+    job_number,
+    TIMESTAMP(timestamp)       AS ts,
+    \`count\`,
+    count_1,
+    count_2,
+    count_3,
+    layer_SID_1,
+    layer_SID_2,
+    layer_SID_3,
+    layer_SID_4,
+    layer_SID_5,
+    layer_SID_6,
+    layer_SID_7,
+    layer_SID_8,
+    layer_SID_9,
+    layer_SID_10,
+    layer_SID_11,
+    layer_SID_12,
+    layer_SID_13,
+    layer_SID_14,
+    layer_SID_15,
+    layer_SID_16,
+    layer_SID_17,
+    layer_SID_18,
+    layer_SID_19,
+    layer_SID_20,
+    layer_SID_21,
+    layer_SID_22,
+    layer_SID_23,
+    layer_SID_24,
+    layer_SID_25,
+    TIMESTAMP(exchange_date)   AS exchange_ts
+  FROM ${ref("external_staging_hess_pallet")}
+),
+
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE Is_current = TRUE
+),
+
+CHANGED_OR_DELETED AS (
+  SELECT h.*
+  FROM H_CUR h
+  JOIN S_SRC s
+    ON h.ID = s.ID
+   AND h.pallet_SID = s.pallet_SID
+  WHERE
+      COALESCE(CAST(h.charge_SID_dry AS STRING), '') != COALESCE(CAST(s.charge_SID_dry AS STRING), '')
+   OR COALESCE(h.Product_name, '') != COALESCE(s.Product_name, '')
+   OR COALESCE(h.Product_number, '') != COALESCE(s.Product_number, '')
+   OR COALESCE(h.job_number, '') != COALESCE(s.job_number, '')
+   OR h.timestamp IS DISTINCT FROM s.ts
+   OR h.\`count\` IS DISTINCT FROM s.\`count\`
+   OR h.exchange_date IS DISTINCT FROM s.exchange_ts
+),
+ 
+NEW_OR_CHANGED AS (
+  SELECT
+    s.*
+  FROM S_SRC s
+  LEFT JOIN H_CUR h
+    ON h.ID = s.ID
+   AND h.pallet_SID = s.pallet_SID
+  WHERE
+    h.ID IS NULL
+    OR
+    COALESCE(CAST(h.charge_SID_dry AS STRING), '') != COALESCE(CAST(s.charge_SID_dry AS STRING), '') OR
+    COALESCE(h.Product_name, '')                  != COALESCE(s.Product_name, '') OR
+    COALESCE(h.Product_number, '')                != COALESCE(s.Product_number, '') OR
+    COALESCE(h.job_number, '')                    != COALESCE(s.job_number, '') OR 
+    h.timestamp                                 IS DISTINCT FROM s.ts OR
+    h.\`count\`                                  IS DISTINCT FROM s.\`count\` OR
+    h.exchange_date                             IS DISTINCT FROM s.exchange_ts
+)
+ 
+SELECT
+  ID,
+  pallet_SID,
+  charge_SID_dry,
+  Product_name,
+  Product_number,
+  job_number,
+  ts                     AS timestamp,
+  \`count\`,
+  count_1,
+  count_2,
+  count_3,
+  layer_SID_1,
+  layer_SID_2,
+  layer_SID_3,
+  layer_SID_4,
+  layer_SID_5,
+  layer_SID_6,
+  layer_SID_7,
+  layer_SID_8,
+  layer_SID_9,
+  layer_SID_10,
+  layer_SID_11,
+  layer_SID_12,
+  layer_SID_13,
+  layer_SID_14,
+  layer_SID_15,
+  layer_SID_16,
+  layer_SID_17,
+  layer_SID_18,
+  layer_SID_19,
+  layer_SID_20,
+  layer_SID_21,
+  layer_SID_22,
+  layer_SID_23,
+  layer_SID_24,
+  layer_SID_25,
+  exchange_ts               AS exchange_date,
+  CURRENT_TIMESTAMP         AS valid_from,
+  CAST(NULL AS TIMESTAMP)   AS valid_to,
+  TRUE                      AS Is_current
+FROM NEW_OR_CHANGED
+
+UNION ALL
+ 
+SELECT
+  ID,
+  pallet_SID,
+  charge_SID_dry,
+  Product_name,
+  Product_number,
+  job_number,
+  timestamp,
+  \`count\`,
+  count_1,
+  count_2,
+  count_3,
+  layer_SID_1,
+  layer_SID_2,
+  layer_SID_3,
+  layer_SID_4,
+  layer_SID_5,
+  layer_SID_6,
+  layer_SID_7,
+  layer_SID_8,
+  layer_SID_9,
+  layer_SID_10,
+  layer_SID_11,
+  layer_SID_12,
+  layer_SID_13,
+  layer_SID_14,
+  layer_SID_15,
+  layer_SID_16,
+  layer_SID_17,
+  layer_SID_18,
+  layer_SID_19,
+  layer_SID_20,
+  layer_SID_21,
+  layer_SID_22,
+  layer_SID_23,
+  layer_SID_24,
+  layer_SID_25,
+  exchange_date,
+  valid_from,
+  CURRENT_TIMESTAMP      AS valid_to,
+  FALSE                  AS Is_current
+FROM CHANGED_OR_DELETED
+
+`, `
+ 
+
+WITH S_SRC AS (
+  SELECT
+    ID,
+    pallet_SID,
+    charge_SID_dry,
+    Product_name,
+    Product_number,
+    job_number,
+    TIMESTAMP(timestamp)       AS ts,
+    \`count\`,
+    count_1,
+    count_2,
+    count_3,
+    layer_SID_1,
+    layer_SID_2,
+    layer_SID_3,
+    layer_SID_4,
+    layer_SID_5,
+    layer_SID_6,
+    layer_SID_7,
+    layer_SID_8,
+    layer_SID_9,
+    layer_SID_10,
+    layer_SID_11,
+    layer_SID_12,
+    layer_SID_13,
+    layer_SID_14,
+    layer_SID_15,
+    layer_SID_16,
+    layer_SID_17,
+    layer_SID_18,
+    layer_SID_19,
+    layer_SID_20,
+    layer_SID_21,
+    layer_SID_22,
+    layer_SID_23,
+    layer_SID_24,
+    layer_SID_25,
+    TIMESTAMP(exchange_date)   AS exchange_ts
+  FROM ${ref("external_staging_hess_pallet")}
+)
+
+SELECT
+  ID,
+  pallet_SID,
+  charge_SID_dry,
+  Product_name,
+  Product_number,
+  job_number,
+  ts                     AS timestamp,
+  \`count\`,
+  count_1,
+  count_2,
+  count_3,
+  layer_SID_1,
+  layer_SID_2,
+  layer_SID_3,
+  layer_SID_4,
+  layer_SID_5,
+  layer_SID_6,
+  layer_SID_7,
+  layer_SID_8,
+  layer_SID_9,
+  layer_SID_10,
+  layer_SID_11,
+  layer_SID_12,
+  layer_SID_13,
+  layer_SID_14,
+  layer_SID_15,
+  layer_SID_16,
+  layer_SID_17,
+  layer_SID_18,
+  layer_SID_19,
+  layer_SID_20,
+  layer_SID_21,
+  layer_SID_22,
+  layer_SID_23,
+  layer_SID_24,
+  layer_SID_25,
+  exchange_ts              AS exchange_date,
+  CURRENT_TIMESTAMP        AS valid_from,
+  CAST(NULL AS TIMESTAMP)  AS valid_to,
+  TRUE                     AS Is_current
+FROM S_SRC
+`)}
