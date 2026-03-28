@@ -1,0 +1,58 @@
+config {
+  type: "table",
+  schema: "gal_unf_marts",
+  name: "unf_incomplete_documents_marts",
+  tags: ["unf_incomplete_documents", "unf", "incomplete_documents", "marts"],
+  description: "Март неполных документов (только актуальные записи из history_unf_incomplete_documents).",
+
+  columns: {
+    organization_name:        "Наименование организации",
+    organization_iin_bin:     "ИИН/БИН организации",
+    customer_name:            "Наименование покупателя",
+    customer_iin_bin:         "ИИН/БИН контрагента",
+    document:                 "Описание документа (тип, номер и дата)",
+    document_datetime:        "Дата и время документа (DATETIME)",
+    document_date:            "Дата документа (DATE)",
+    contract_name:            "Наименование договора с контрагентом",
+    document_status_signing:  "Статус подписания документа («Да», «Нет», «Не требуется»)",
+    document_status_gtd:      "Статус оформления ГТД («Да», «Нет», «Не требуется»)",
+    document_status_avr:      "Статус оформления АВР («Да», «Нет», «Не требуется»)",
+    document_sum:             "Сумма документа в KZT, 2 знака",
+    contract_found:           "Признак наличия договора в УНФ (TRUE/FALSE)",
+    manager_name:             "Ответственный менеджер",
+    date:                     "Дата фиксации состояния"
+  }
+}
+
+SELECT
+  organization_name,
+  organization_iin_bin,
+  customer_name,
+  customer_iin_bin,
+  document,
+
+  -- Поддерживаем ISO 'YYYY-MM-DDTHH:MM:SS' и 'YYYY-MM-DD HH:MM:SS'
+  COALESCE(
+    SAFE.PARSE_DATETIME('%Y-%m-%dT%H:%M:%S', CAST(document_datetime AS STRING)),
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(document_datetime AS STRING))
+  ) AS document_datetime,
+
+  COALESCE(
+    SAFE.PARSE_DATE('%Y-%m-%d', CAST(document_date AS STRING)),
+    SAFE_CAST(document_date AS DATE)
+  ) AS document_date,
+
+  contract_name,
+  document_status_signing,
+  document_status_gtd,
+  document_status_avr,
+
+  -- FLOAT64 → NUMERIC с округлением до 2 знаков
+  ROUND(SAFE_CAST(document_sum AS NUMERIC), 2) AS document_sum,
+
+  contract_found,
+  manager_name,
+  date
+
+FROM ${ref("history_unf_incomplete_documents")}
+WHERE is_current = TRUE
