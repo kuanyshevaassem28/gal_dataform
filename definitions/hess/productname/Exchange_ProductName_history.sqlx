@@ -1,0 +1,117 @@
+config {
+  type: "incremental",
+  schema: "gal_hess_statistic",
+  name: "Exchange_ProductName_history",
+  tags: ["hess_productname", "hess", "productname", "history", "scd2"],
+  description: "HESS — SCD2 история ProductName по ID.",
+  uniqueKey: ["ID", "valid_from"],
+
+  columns: {
+    ID:                "Идентификатор записи",
+    ProductName:       "Наименование продукта",
+    ProducDescription: "Описание продукта",
+    Date:              "Дата (как в источнике)",
+    RecipeName:        "Название рецепта",
+
+    valid_from:        "Начало действия версии (SCD2)",
+    valid_to:          "Конец действия версии (SCD2)",
+    is_current:        "Флаг актуальной версии"
+  }
+}
+ 
+
+${when(incremental(), ` 
+ 
+WITH S_SRC AS (
+  SELECT
+    ID,
+    ProductName,
+    ProducDescription,
+    \`Date\`,
+    RecipeName
+  FROM ${ref("Exchange_ProductName")}
+),
+ 
+H_CUR AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+ 
+CHANGED_OR_DELETED AS (
+  SELECT
+    h.*
+  FROM H_CUR h
+  LEFT JOIN S_SRC s
+    ON h.ID = s.ID
+  WHERE 
+    s.ID IS NULL
+    OR 
+    COALESCE(h.ProductName,       '') != COALESCE(s.ProductName,       '') OR
+    COALESCE(h.ProducDescription, '') != COALESCE(s.ProducDescription, '') OR
+    h.\`Date\`                        IS DISTINCT FROM s.\`Date\`          OR
+    COALESCE(h.RecipeName,       '') != COALESCE(s.RecipeName,       '')
+),
+ 
+NEW_OR_CHANGED AS (
+  SELECT
+    s.*
+  FROM S_SRC s
+  LEFT JOIN H_CUR h
+    ON h.ID = s.ID
+  WHERE
+    h.ID IS NULL
+    OR
+    COALESCE(h.ProductName,       '') != COALESCE(s.ProductName,       '') OR
+    COALESCE(h.ProducDescription, '') != COALESCE(s.ProducDescription, '') OR
+    h.\`Date\`                        IS DISTINCT FROM s.\`Date\`          OR
+    COALESCE(h.RecipeName,       '') != COALESCE(s.RecipeName,       '')
+)
+ 
+SELECT
+  ID,
+  ProductName,
+  ProducDescription,
+  \`Date\`,
+  RecipeName,
+  CURRENT_TIMESTAMP        AS valid_from,
+  CAST(NULL AS TIMESTAMP)  AS valid_to,
+  TRUE                     AS is_current
+FROM NEW_OR_CHANGED
+
+UNION ALL
+ 
+SELECT
+  ID,
+  ProductName,
+  ProducDescription,
+  \`Date\`,
+  RecipeName,
+  valid_from,
+  CURRENT_TIMESTAMP      AS valid_to,
+  FALSE                  AS is_current
+FROM CHANGED_OR_DELETED
+
+`, ` 
+
+WITH S_SRC AS (
+  SELECT
+    ID,
+    ProductName,
+    ProducDescription,
+    \`Date\`,
+    RecipeName
+  FROM ${ref("Exchange_ProductName")}
+)
+
+SELECT
+  ID,
+  ProductName,
+  ProducDescription,
+  \`Date\`,
+  RecipeName,
+  CURRENT_TIMESTAMP       AS valid_from,
+  CAST(NULL AS TIMESTAMP) AS valid_to,
+  TRUE                    AS is_current
+FROM S_SRC
+`)}
