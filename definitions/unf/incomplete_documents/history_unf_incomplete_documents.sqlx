@@ -1,0 +1,236 @@
+config {
+  type: "operations",
+  schema: "gal_unf",
+  name: "history_unf_incomplete_documents",
+  hasOutput: true,
+  tags: ["unf_incomplete_documents", "unf", "incomplete_documents", "history", "scd2"],
+  description: "UNF — документы без соответствия договору, SCD-2 история."
+}
+
+BEGIN
+
+-- =====================================
+-- 1. Переменные
+-- =====================================
+DECLARE run_dt DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty");
+
+-- =====================================
+-- 2. Создание таблицы (если нет)
+-- =====================================
+CREATE TABLE IF NOT EXISTS `galery-22579.gal_unf.history_unf_incomplete_documents` (
+  organization_name STRING,
+  organization_iin_bin STRING,
+  customer_name STRING,
+  customer_iin_bin STRING,
+  document STRING,
+  document_datetime STRING,
+  document_date STRING,
+  contract_name STRING,
+  document_status_signing STRING,
+  document_status_gtd STRING,
+  document_status_avr STRING,
+  document_sum FLOAT64,
+  contract_found BOOL,
+  manager_name STRING,
+  date DATE,
+  surrogate_key STRING,
+  valid_from DATETIME,
+  valid_to DATETIME,
+  is_current BOOL
+);
+
+-- =====================================
+-- 3. SCD2 MERGE
+-- =====================================
+
+MERGE `galery-22579.gal_unf.history_unf_incomplete_documents` t
+USING (
+
+  WITH s_raw AS (
+    SELECT
+      organization_name,
+      organization_iin_bin,
+      customer_name,
+      customer_iin_bin,
+      document,
+      document_datetime,
+      document_date,
+      contract_name,
+      document_status_signing,
+      document_status_gtd,
+      document_status_avr,
+      SAFE_CAST(document_sum AS FLOAT64) AS document_sum,
+      SAFE_CAST(contract_found AS BOOL) AS contract_found,
+      manager_name,
+      SAFE_CAST(date AS DATE) AS date,
+      TO_HEX(SHA256(
+        COALESCE(TRIM(document),'') || '|' ||
+        COALESCE(TRIM(organization_iin_bin),'') || '|' ||
+        COALESCE(TRIM(customer_iin_bin),'')
+      )) AS surrogate_key
+    FROM `galery-22579.gal_unf.external_staging_unf_incomplete_documents`
+  ),
+
+  -- дедуп
+  s AS (
+    SELECT * EXCEPT(rn)
+    FROM (
+      SELECT s_raw.*,
+             ROW_NUMBER() OVER (
+               PARTITION BY surrogate_key
+               ORDER BY date DESC
+             ) rn
+      FROM s_raw
+    )
+    WHERE rn = 1
+  ),
+
+  h AS (
+    SELECT *
+    FROM `galery-22579.gal_unf.history_unf_incomplete_documents`
+    WHERE is_current = TRUE
+  ),
+
+  diff AS (
+    SELECT
+      s.*,
+      h.valid_from,
+
+      (h.surrogate_key IS NULL) AS is_new,
+
+      (
+        h.surrogate_key IS NOT NULL AND (
+             s.organization_name       IS DISTINCT FROM h.organization_name
+          OR s.organization_iin_bin    IS DISTINCT FROM h.organization_iin_bin
+          OR s.customer_name           IS DISTINCT FROM h.customer_name
+          OR s.customer_iin_bin        IS DISTINCT FROM h.customer_iin_bin
+          OR s.document                IS DISTINCT FROM h.document
+          OR s.document_datetime       IS DISTINCT FROM h.document_datetime
+          OR s.document_date           IS DISTINCT FROM h.document_date
+          OR s.contract_name           IS DISTINCT FROM h.contract_name
+          OR s.document_status_signing IS DISTINCT FROM h.document_status_signing
+          OR s.document_status_gtd     IS DISTINCT FROM h.document_status_gtd
+          OR s.document_status_avr     IS DISTINCT FROM h.document_status_avr
+          OR s.document_sum            IS DISTINCT FROM h.document_sum
+          OR s.contract_found          IS DISTINCT FROM h.contract_found
+          OR s.manager_name            IS DISTINCT FROM h.manager_name
+          OR s.date                    IS DISTINCT FROM h.date
+        )
+      ) AS is_changed
+    FROM s
+    LEFT JOIN h
+      ON s.surrogate_key = h.surrogate_key
+  ),
+
+  rows_to_merge AS (
+
+    -- Закрываем старые версии
+    SELECT
+      surrogate_key,
+      valid_from,
+      run_dt AS valid_to,
+      FALSE AS is_current,
+      'U' AS op,
+      NULL AS organization_name,
+      NULL AS organization_iin_bin,
+      NULL AS customer_name,
+      NULL AS customer_iin_bin,
+      NULL AS document,
+      NULL AS document_datetime,
+      NULL AS document_date,
+      NULL AS contract_name,
+      NULL AS document_status_signing,
+      NULL AS document_status_gtd,
+      NULL AS document_status_avr,
+      NULL AS document_sum,
+      NULL AS contract_found,
+      NULL AS manager_name,
+      NULL AS date
+    FROM diff
+    WHERE is_changed
+
+    UNION ALL
+
+    -- Вставляем новые версии
+    SELECT
+      surrogate_key,
+      NULL AS valid_from,
+      NULL AS valid_to,
+      TRUE AS is_current,
+      'I' AS op,
+      organization_name,
+      organization_iin_bin,
+      customer_name,
+      customer_iin_bin,
+      document,
+      document_datetime,
+      document_date,
+      contract_name,
+      document_status_signing,
+      document_status_gtd,
+      document_status_avr,
+      document_sum,
+      contract_found,
+      manager_name,
+      date
+    FROM diff
+    WHERE is_new OR is_changed
+  )
+
+  SELECT * FROM rows_to_merge
+
+) s
+
+ON t.surrogate_key = s.surrogate_key
+AND t.valid_from = s.valid_from
+
+WHEN MATCHED AND s.op = 'U' THEN
+  UPDATE SET
+    is_current = FALSE,
+    valid_to = s.valid_to
+
+WHEN NOT MATCHED AND s.op = 'I' THEN
+  INSERT (
+    organization_name,
+    organization_iin_bin,
+    customer_name,
+    customer_iin_bin,
+    document,
+    document_datetime,
+    document_date,
+    contract_name,
+    document_status_signing,
+    document_status_gtd,
+    document_status_avr,
+    document_sum,
+    contract_found,
+    manager_name,
+    date,
+    surrogate_key,
+    valid_from,
+    valid_to,
+    is_current
+  )
+  VALUES (
+    s.organization_name,
+    s.organization_iin_bin,
+    s.customer_name,
+    s.customer_iin_bin,
+    s.document,
+    s.document_datetime,
+    s.document_date,
+    s.contract_name,
+    s.document_status_signing,
+    s.document_status_gtd,
+    s.document_status_avr,
+    s.document_sum,
+    s.contract_found,
+    s.manager_name,
+    s.date,
+    s.surrogate_key,
+    run_dt,
+    NULL,
+    TRUE
+  );
+
+END;
