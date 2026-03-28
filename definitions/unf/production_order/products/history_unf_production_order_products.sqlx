@@ -1,0 +1,97 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_production_order_products",
+  tags: ["unf_production_order_products", "unf", "production_order", "products", "history"],
+  description: "UNF — история позиций заказов на производство (Документ.ЗаказНаПроизводство) с SCD2 (is_current, valid_from/valid_to, surrogate_key).",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    document_id:        "ID документа ЗаказНаПроизводство",
+    document_number:    "Номер документа заказа на производство",
+    document_date:      "Дата документа (как в источнике, из поля date)",
+    nomenclature_name:  "Наименование номенклатуры",
+    variation_name:     "Характеристика номенклатуры",
+    unit_name:          "Единица измерения",
+    quantity:           "Количество в заказе",
+
+    is_current:         "Признак актуальной версии записи",
+    valid_from:         "Начало периода действия версии (SCD2)",
+    valid_to:           "Конец периода действия версии (SCD2)",
+    surrogate_key:      "Суррогатный ключ: document_id|nomenclature_name|variation_name"
+  }
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_production_order_products`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Документ.ЗаказНаПроизводство"
+    );
+}
+
+post_operations {
+  MERGE `galery-22579.gal_unf.history_unf_production_order_products` AS t
+  USING (
+    SELECT DISTINCT surrogate_key, valid_from, document_id
+    FROM (
+      SELECT
+        surrogate_key,
+        valid_from,
+        document_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY surrogate_key
+          ORDER BY valid_from DESC, document_id DESC NULLS LAST
+        ) AS rn
+      FROM `galery-22579.gal_unf.history_unf_production_order_products`
+      WHERE is_current = TRUE
+    )
+    WHERE rn > 1
+  ) d
+  ON  t.is_current    = TRUE
+  AND t.surrogate_key = d.surrogate_key
+  AND t.valid_from    = d.valid_from
+  AND (t.document_id IS NOT DISTINCT FROM d.document_id)
+  WHEN MATCHED THEN
+    UPDATE SET
+      t.is_current = FALSE,
+      t.valid_to   = CURRENT_DATETIME('Asia/Almaty');
+}
+
+WITH S AS (
+  SELECT
+    s.document_id,
+    s.nomenclature_name,
+    s.variation_name,
+    s.unit_name,
+    s.quantity,
+    s.document_number,
+    s.date AS document_date,
+    TO_HEX(
+      SHA256(
+        COALESCE(s.document_id, '') || '|' ||
+        COALESCE(s.nomenclature_name, '') || '|' ||
+        COALESCE(s.variation_name, '')
+      )
+    ) AS surrogate_key
+  FROM ${ref("staging_unf_production_order_products")} AS s
+)
+
+SELECT
+  document_id,
+  nomenclature_name,
+  variation_name,
+  unit_name,
+  quantity,
+  document_number,
+  document_date,
+  TRUE                           AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)         AS valid_to,
+  surrogate_key
+FROM S
