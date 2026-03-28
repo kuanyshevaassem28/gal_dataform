@@ -1,0 +1,55 @@
+config {
+  type: "table",
+  schema: "gal_rw",
+  name: "staging_measurement_results_height",
+  tags: ["rw", "rw_measurement_results_height", "staging", "rw_height_results"],
+  description: "Нормализация результатов по высоте + BK/SK/hash_diff.",
+  columns: {
+    ui_Measurement_ID:     "Связь с Measurements (BK)",
+    Signal_Light_Board_1:  "Сигнал светофора для панели 1 (INT64)",
+    Signal_Light_Board_2:  "Сигнал светофора для панели 2 (INT64)",
+    Signal_Light_Total:    "Суммарный сигнал светофора (INT64)",
+    Average_Height_Board_1:"Средняя высота по панели 1 (FLOAT64)",
+    Average_Height_Board_2:"Средняя высота по панели 2 (FLOAT64)",
+    Double_Panel_Flag:     "Признак двойной панели (INT64)",
+    Waste_Calc_Method:     "Метод расчета отходов (INT64)",
+    Laser_1_Active:        "Статус активности лазера 1 (INT64)",
+    Laser_2_Active:        "Статус активности лазера 2 (INT64)",
+    Laser_3_Active:        "Статус активности лазера 3 (INT64)",
+    bk:                    "Бизнес-ключ (CAST(ui_Measurement_ID AS STRING))",
+    surrogate_key:         "SHA256 от BK"
+  }
+}
+
+WITH src AS (
+  SELECT
+    ui_Measurement_ID,
+    i_Signal_Color_Board_1 AS Signal_Light_Board_1,
+    i_Signal_Color_Board_2 AS Signal_Light_Board_2,
+    i_Signal_Color_Total   AS Signal_Light_Total,
+    r_Average_Board_1      AS Average_Height_Board_1,
+    r_Average_Board_2      AS Average_Height_Board_2,
+    i_Double               AS Double_Panel_Flag,
+    i_CalcWaste            AS Waste_Calc_Method,
+    i_Laser_1_Akt          AS Laser_1_Active,
+    i_Laser_2_Akt          AS Laser_2_Active,
+    i_Laser_3_Akt          AS Laser_3_Active
+  FROM ${ref("MeasurementResults_Height")}
+)
+
+SELECT
+  SAFE_CAST(ui_Measurement_ID AS INT64)                 AS ui_Measurement_ID,
+  SAFE_CAST(Signal_Light_Board_1 AS INT64)              AS Signal_Light_Board_1,
+  SAFE_CAST(Signal_Light_Board_2 AS INT64)              AS Signal_Light_Board_2,
+  SAFE_CAST(Signal_Light_Total AS INT64)                AS Signal_Light_Total,
+  SAFE_CAST(Average_Height_Board_1 AS FLOAT64)          AS Average_Height_Board_1,
+  SAFE_CAST(Average_Height_Board_2 AS FLOAT64)          AS Average_Height_Board_2,
+  SAFE_CAST(Double_Panel_Flag AS INT64)                 AS Double_Panel_Flag,
+  SAFE_CAST(Waste_Calc_Method AS INT64)                 AS Waste_Calc_Method,
+  SAFE_CAST(Laser_1_Active AS INT64)                    AS Laser_1_Active,
+  SAFE_CAST(Laser_2_Active AS INT64)                    AS Laser_2_Active,
+  SAFE_CAST(Laser_3_Active AS INT64)                    AS Laser_3_Active,
+
+  CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING) AS bk,
+  TO_HEX(SHA256(CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING))) AS surrogate_key
+FROM src
