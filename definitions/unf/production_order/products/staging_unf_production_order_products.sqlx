@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: "gal_unf",
+  name: "staging_unf_production_order_products",
+  tags: ["unf_production_order_products", "unf", "production_order", "products", "staging"],
+  description: "staging данные заказов на производство из external_staging_unf_production_order_products с базовыми преобразованиями."
+}
+
+SELECT
+  nomenclature_name,
+  variation_name,
+  unit_name,
+  nomenclature_id,
+  variation_id,
+  unit_id,
+  quantity,
+  category_name,
+  category_id,
+  prop_thickness,
+  prop_texture,
+  prop_impregnation,
+  prop_color,
+  prop_category,
+  prop_grade,
+  squares_per_pallet,
+  pieces_per_pallet,
+  quantity_pallets,
+  document_id,
+  document_number,
+  TIMESTAMP_MICROS(CAST(document_datetime / 1000 AS INT64)) AS document_datetime,
+  date
+FROM ${ref("external_staging_unf_production_order_products")}
