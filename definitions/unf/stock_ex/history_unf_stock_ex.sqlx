@@ -1,0 +1,271 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_stock_ex",
+  tags: ["unf_stock_ex", "unf", "stock_ex", "history", "scd2"],
+  description: "UNF — SCD-2 история остатков по ячейкам склада. Surrogate_key = owner+stock+cell+nomenclature+variation+unit+category+свойства+date.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    owner_name:         "Владелец склада / юр. лицо",
+    stock_name:         "Название склада",
+    cell_name:          "Название ячейки хранения",
+    nomenclature_name:  "Название номенклатуры",
+    variation_name:     "Вариант номенклатуры (цвет/размер и т.п.)",
+    unit_name:          "Единица измерения",
+    category_name:      "Категория номенклатуры",
+
+    prop_thickness:     "Толщина (свойство номенклатуры)",
+    prop_texture:       "Фактура (свойство номенклатуры)",
+    prop_impregnation:  "Пропитка (свойство номенклатуры)",
+    prop_color:         "Цвет (свойство номенклатуры)",
+    prop_category:      "Категория продукта (свойство)",
+    prop_grade:         "Сорт / класс (свойство)",
+
+    squares_per_pallet: "Количество м² на поддоне",
+    pieces_per_pallet:  "Количество штук на поддоне",
+    quantity:           "Количество товара (в единицах измерения)",
+    quantity_pallets:   "Количество поддонов",
+    date:               "Дата состояния остатка",
+
+    valid_from:         "Начало периода действия версии записи (SCD2)",
+    valid_to:           "Конец периода действия версии записи (SCD2)",
+    is_current:         "Флаг актуальной версии записи (TRUE — текущая)",
+    surrogate_key:      "Surrogate key: owner+stock+cell+nomenclature+variation+unit+category+свойства+date"
+  }
+}
+ 
+${when(incremental(), `
+ 
+WITH S_SRC AS (
+  SELECT
+    owner_name,
+    stock_name,
+    cell_name,
+    nomenclature_name,
+    variation_name,
+    unit_name,
+    category_name,
+    prop_thickness,
+    prop_texture,
+    prop_impregnation,
+    prop_color,
+    prop_category,
+    prop_grade,
+    SAFE_CAST(squares_per_pallet AS FLOAT64) AS squares_per_pallet,
+    SAFE_CAST(pieces_per_pallet  AS INT64)   AS pieces_per_pallet,
+    SAFE_CAST(quantity           AS FLOAT64) AS quantity,
+    SAFE_CAST(quantity_pallets   AS FLOAT64) AS quantity_pallets,
+    date
+  FROM ${ref("external_staging_unf_stock_ex")}
+),
+
+S AS (
+  SELECT
+    owner_name,
+    stock_name,
+    cell_name,
+    nomenclature_name,
+    variation_name,
+    unit_name,
+    category_name,
+    prop_thickness,
+    prop_texture,
+    prop_impregnation,
+    prop_color,
+    prop_category,
+    prop_grade,
+    squares_per_pallet,
+    pieces_per_pallet,
+    quantity,
+    quantity_pallets,
+    date,
+ 
+    TO_HEX(SHA256(
+      COALESCE(owner_name, '')        || '|' ||
+      COALESCE(stock_name, '')        || '|' ||
+      COALESCE(cell_name, '')         || '|' ||
+      COALESCE(nomenclature_name, '') || '|' ||
+      COALESCE(variation_name, '')    || '|' ||
+      COALESCE(unit_name, '')         || '|' ||
+      COALESCE(category_name, '')     || '|' ||
+      COALESCE(prop_thickness, '')    || '|' ||
+      COALESCE(prop_texture, '')      || '|' ||
+      COALESCE(prop_impregnation, '') || '|' ||
+      COALESCE(prop_color, '')        || '|' ||
+      COALESCE(prop_category, '')     || '|' ||
+      COALESCE(prop_grade, '')        || '|' ||
+      COALESCE(CAST(date AS STRING), '')
+    )) AS surrogate_key
+  FROM S_SRC
+),
+
+H_CUR AS (
+  SELECT surrogate_key, valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s USING (surrogate_key)
+  WHERE h.is_current = TRUE
+)
+ 
+SELECT
+  n.owner_name,
+  n.stock_name,
+  n.cell_name,
+  n.nomenclature_name,
+  n.variation_name,
+  n.unit_name,
+  n.category_name,
+  n.prop_thickness,
+  n.prop_texture,
+  n.prop_impregnation,
+  n.prop_color,
+  n.prop_category,
+  n.prop_grade,
+  n.squares_per_pallet,
+  n.pieces_per_pallet,
+  n.quantity,
+  n.quantity_pallets,
+  n.date,
+  CURRENT_DATETIME('Asia/Almaty')                          AS valid_from,
+  CAST(NULL AS DATETIME)        AS valid_to,
+  TRUE                          AS is_current,
+  n.surrogate_key
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+ 
+SELECT
+  h.owner_name,
+  h.stock_name,
+  h.cell_name,
+  h.nomenclature_name,
+  h.variation_name,
+  h.unit_name,
+  h.category_name,
+  h.prop_thickness,
+  h.prop_texture,
+  h.prop_impregnation,
+  h.prop_color,
+  h.prop_category,
+  h.prop_grade,
+  h.squares_per_pallet,
+  h.pieces_per_pallet,
+  h.quantity,
+  h.quantity_pallets,
+  h.date,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')                          AS valid_to,
+  FALSE                         AS is_current,
+  h.surrogate_key
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON h.surrogate_key = k.surrogate_key
+ AND h.valid_from    = k.valid_from
+WHERE h.is_current = TRUE
+
+`, `
+ 
+
+WITH S_SRC AS (
+  SELECT
+    owner_name,
+    stock_name,
+    cell_name,
+    nomenclature_name,
+    variation_name,
+    unit_name,
+    category_name,
+    prop_thickness,
+    prop_texture,
+    prop_impregnation,
+    prop_color,
+    prop_category,
+    prop_grade,
+    SAFE_CAST(squares_per_pallet AS FLOAT64) AS squares_per_pallet,
+    SAFE_CAST(pieces_per_pallet  AS INT64)   AS pieces_per_pallet,
+    SAFE_CAST(quantity           AS FLOAT64) AS quantity,
+    SAFE_CAST(quantity_pallets   AS FLOAT64) AS quantity_pallets,
+    date
+  FROM ${ref("external_staging_unf_stock_ex")}
+),
+
+
+S AS (
+  SELECT
+    owner_name,
+    stock_name,
+    cell_name,
+    nomenclature_name,
+    variation_name,
+    unit_name,
+    category_name,
+    prop_thickness,
+    prop_texture,
+    prop_impregnation,
+    prop_color,
+    prop_category,
+    prop_grade,
+    squares_per_pallet,
+    pieces_per_pallet,
+    quantity,
+    quantity_pallets,
+    date,
+
+    TO_HEX(SHA256(
+      COALESCE(owner_name, '')        || '|' ||
+      COALESCE(stock_name, '')        || '|' ||
+      COALESCE(cell_name, '')         || '|' ||
+      COALESCE(nomenclature_name, '') || '|' ||
+      COALESCE(variation_name, '')    || '|' ||
+      COALESCE(unit_name, '')         || '|' ||
+      COALESCE(category_name, '')     || '|' ||
+      COALESCE(prop_thickness, '')    || '|' ||
+      COALESCE(prop_texture, '')      || '|' ||
+      COALESCE(prop_impregnation, '') || '|' ||
+      COALESCE(prop_color, '')        || '|' ||
+      COALESCE(prop_category, '')     || '|' ||
+      COALESCE(prop_grade, '')        || '|' ||
+      COALESCE(CAST(date AS STRING), '')
+    )) AS surrogate_key
+  FROM S_SRC
+)
+
+SELECT
+  owner_name,
+  stock_name,
+  cell_name,
+  nomenclature_name,
+  variation_name,
+  unit_name,
+  category_name,
+  prop_thickness,
+  prop_texture,
+  prop_impregnation,
+  prop_color,
+  prop_category,
+  prop_grade,
+  squares_per_pallet,
+  pieces_per_pallet,
+  quantity,
+  quantity_pallets,
+  date,
+  CURRENT_DATETIME('Asia/Almaty')                   AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  TRUE                   AS is_current,
+  surrogate_key
+FROM S
+
+`)}
