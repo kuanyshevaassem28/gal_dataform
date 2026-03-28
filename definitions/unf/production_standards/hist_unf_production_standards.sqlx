@@ -1,0 +1,179 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_production_standards",
+  tags: ["unf_production_standards", "unf", "production_standards", "history", "scd2"],
+  description: "Нормативы производства (SCD-2 история: valid_from/valid_to, is_current)", 
+  columns: {
+    period: "Дата, начиная с которой действуют значения в записи",
+    manufacturer_id: "Идентификатор изготовителя (структурного подразделения) в системе 1С",
+    manufacturer_name: "Наименование изготовителя (структурного подразделения)",
+    nomenclature_id: "Идентификатор продукции (номенклатуры) в системе 1С",
+    nomenclature_name: "Наименование продукции (номенклатуры)",
+    unit_id: "Идентификатор единицы измерения продукции в системе 1С",
+    unit_name: "Наименование единицы измерения продукции",
+    category_id: "Идентификатор категории продукции в системе 1С",
+    category_name: "Наименование категории продукции (например, «Камни бортовые», «Плиты тротуарные»)",
+    thickness: "Толщина продукции (например, «80 ММ», «60 ММ»)",
+    layers_count_in_pallet: "Количество слоев в паллете",
+    pieces_per_layer: "Количество штук продукции в слое",
+    pallet_weight: "Масса нетто продукции в одной полной паллете",
+    quantity_in_pallet: "Количество продукции (в единицах измерения) в одной полной паллете",
+    standard_takt_time: "Нормативное количество тактов в секундах",
+    tape_name: "Материал ленты для обвязки паллеты",
+    tape_quantity: "Нормативное количество ленты на одну паллету",
+    tape_ext_quantity: "Альтернативное (увеличенное) количество ленты на одну паллету для повышенной надежности упаковки",
+    wrap_name: "Материал пленки для обвязки паллеты",
+    wrap_quantity: "Нормативное количество пленки на одну паллету",
+    spunbond_name: "Наименование межслойного материала (спанбонд), укладываемого между слоями продукции",
+    spunbond_quantity: "Количество межслойного материала на одну паллету",
+    url: "URL-адрес страницы продукции",
+    bk: "Бизнес-ключ: period|manufacturer_id|nomenclature_id|thickness (служебное поле для дедупликации)",
+    surrogate_key: "Суррогатный ключ (хэш бизнес-ключа), используется для SCD-2 и связок",
+    hash_diff: "Хэш-снимок содержимого записи для детекции изменений"
+  },
+uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(incremental(), `
+
+WITH
+S AS (
+  SELECT *
+  FROM ${ref("staging_unf_production_standards")}
+  WHERE TRUE
+),
+H_CUR AS (   
+  SELECT surrogate_key, hash_diff, valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+NEW_OR_CHANGED AS (   
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL
+     OR h.hash_diff != s.hash_diff
+),
+CHANGED_KEYS AS (  
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN S s USING (surrogate_key)
+  WHERE h.is_current = TRUE
+    AND h.hash_diff != s.hash_diff
+)
+ 
+SELECT
+  n.period,
+  n.manufacturer_id,
+  n.nomenclature_id,
+  n.thickness,
+  n.manufacturer_name,
+  n.nomenclature_name,
+  n.layers_count_in_pallet,
+  n.pieces_per_layer,
+  n.pallet_weight,
+  n.quantity_in_pallet,
+  n.standard_takt_time,
+  n.tape_name,
+  n.tape_quantity,
+  n.tape_ext_quantity,
+  n.wrap_name,
+  n.wrap_quantity,
+  n.spunbond_name,
+  n.spunbond_quantity,
+  n.url,
+  n.unit_id,
+  n.unit_name,
+  n.category_id,
+  n.category_name,
+  n.surrogate_key,
+  n.hash_diff,
+  TRUE  AS is_current,
+  CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+-- закрываем прежние текущие версии тем же (surrogate_key, valid_from)
+SELECT
+  h.period,
+  h.manufacturer_id,
+  h.nomenclature_id,
+  h.thickness,
+  h.manufacturer_name,
+  h.nomenclature_name,
+  h.layers_count_in_pallet,
+  h.pieces_per_layer,
+  h.pallet_weight,
+  h.quantity_in_pallet,
+  h.standard_takt_time,
+  h.tape_name,
+  h.tape_quantity,
+  h.tape_ext_quantity,
+  h.wrap_name,
+  h.wrap_quantity,
+  h.spunbond_name,
+  h.spunbond_quantity,
+  h.url,
+  h.unit_id,
+  h.unit_name,
+  h.category_id,
+  h.category_name,
+  h.surrogate_key,
+  h.hash_diff,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME("Asia/Almaty") AS valid_to
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON k.surrogate_key = h.surrogate_key
+ AND k.valid_from    = h.valid_from
+WHERE h.is_current = TRUE
+`, `
+
+-- ===================== NON-INCREMENTAL (FULL REFRESH) =====================
+WITH S AS (
+  SELECT *
+  FROM ${ref("staging_unf_production_standards")}
+),
+DEDUP AS (
+  SELECT s.*
+  FROM S s
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY surrogate_key
+    ORDER BY period DESC NULLS LAST
+  ) = 1
+)
+SELECT
+  d.period,
+  d.manufacturer_id,
+  d.nomenclature_id,
+  d.thickness,
+  d.manufacturer_name,
+  d.nomenclature_name,
+  d.layers_count_in_pallet,
+  d.pieces_per_layer,
+  d.pallet_weight,
+  d.quantity_in_pallet,
+  d.standard_takt_time,
+  d.tape_name,
+  d.tape_quantity,
+  d.tape_ext_quantity,
+  d.wrap_name,
+  d.wrap_quantity,
+  d.spunbond_name,
+  d.spunbond_quantity,
+  d.url,
+  d.unit_id,
+  d.unit_name,
+  d.category_id,
+  d.category_name,
+  d.surrogate_key,
+  d.hash_diff,
+  TRUE  AS is_current,
+  CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to
+FROM DEDUP d
+`)}
