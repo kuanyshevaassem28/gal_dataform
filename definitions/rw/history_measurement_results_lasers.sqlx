@@ -1,0 +1,91 @@
+config {
+  type: "incremental",
+  schema: "gal_rw",
+  name: "history_measurement_results_lasers",
+  tags: ["rw", "rw_measurement_results_lasers", "history"],
+  description: "SCD-2 (append-only): вставляет новые/изменившиеся версии без закрытия старых.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(
+  incremental(),
+  `
+  WITH
+  S AS (
+    SELECT
+      ui_Measurement_ID,
+      Laser_Index,
+      i_Signal_Board_1,
+      i_Signal_Board_2,
+      r_AV_Board1_SingleLaser,
+      r_AV_Board2_SingleLaser,
+      i_Stones,
+      i_Stones_Board1,
+      i_Stones_Board2,
+      surrogate_key
+    FROM ${ref("staging_measurement_results_lasers")}
+  ),
+
+  H_CUR AS (
+    SELECT
+      surrogate_key
+    FROM ${self()}
+    GROUP BY surrogate_key
+  ),
+
+  NEW_OR_CHANGED AS (
+    SELECT s.*
+    FROM S s
+    LEFT JOIN H_CUR h USING (surrogate_key)
+    WHERE h.surrogate_key IS NULL
+  ),
+
+  DEDUP AS (
+    SELECT * EXCEPT(rn)
+    FROM (
+      SELECT
+        n.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY surrogate_key
+          ORDER BY ui_Measurement_ID DESC, Laser_Index DESC
+        ) AS rn
+      FROM NEW_OR_CHANGED n
+    )
+    WHERE rn = 1
+  )
+
+  SELECT
+    ui_Measurement_ID,
+    Laser_Index,
+    i_Signal_Board_1,
+    i_Signal_Board_2,
+    r_AV_Board1_SingleLaser,
+    r_AV_Board2_SingleLaser,
+    i_Stones,
+    i_Stones_Board1,
+    i_Stones_Board2,
+    surrogate_key,
+    TRUE  AS is_current,
+    CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+    CAST(NULL AS DATETIME)          AS valid_to
+  FROM DEDUP
+  `,
+  `
+ 
+  SELECT
+    ui_Measurement_ID,
+    Laser_Index,
+    i_Signal_Board_1,
+    i_Signal_Board_2,
+    r_AV_Board1_SingleLaser,
+    r_AV_Board2_SingleLaser,
+    i_Stones,
+    i_Stones_Board1,
+    i_Stones_Board2,
+    surrogate_key,
+    TRUE  AS is_current,
+    CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+    CAST(NULL AS DATETIME)          AS valid_to
+  FROM ${ref("staging_measurement_results_lasers")}
+  `
+)}
