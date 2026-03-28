@@ -1,0 +1,58 @@
+config {
+  type: "table",
+  schema: "gal_unf",
+  name: "staging_unf_debt_contracts",
+  tags: ["unf_debt_contracts", "unf", "debt", "contracts", "staging"],
+  description: "Staging-слой по задолженности по договорам из external_staging_unf_debt_contracts.",
+  columns: {
+    company_id: "ID компании из UNF",
+    company_name: "Название компании",
+    company_iin_bin: "ИИН/БИН компании",
+    company_group_id: "ID группы компаний",
+    company_group_name: "Название группы компаний",
+
+    contract_id: "ID договора",
+    contract_name: "Название договора",
+    contract_type: "Тип/категория договора",
+    contract_group_of_category_name: "Группа категории договора",
+
+    organization_id: "ID организации (нашей)",
+    organization_name: "Название организации (нашей)",
+
+    currency_id: "ID валюты договора",
+    currency_name: "Название валюты договора",
+
+    manager_id: "ID менеджера",
+    manager_name: "ФИО менеджера",
+
+    debt_sum: "Сумма долга",
+    debt_sum_buh: "Сумма долга (бухгалтерская версия)",
+
+    date_of_debt: "Дата возникновения задолженности",
+    date: "Дата отчёта",
+    loaded_at: "Дата/время загрузки данных из источника"
+  }
+}
+
+SELECT
+  company_id,
+  company_name,
+  company_iin_bin,
+  company_group_id,
+  company_group_name,
+  contract_id,
+  contract_name,
+  contract_type,
+  contract_group_of_category_name,
+  organization_id,
+  organization_name,
+  currency_id,
+  currency_name,
+  manager_id,
+  manager_name,
+  SAFE_CAST(debt_sum     AS FLOAT64)  AS debt_sum,
+  SAFE_CAST(debt_sum_buh AS FLOAT64)  AS debt_sum_buh,
+  SAFE_CAST(date_of_debt AS DATE)     AS date_of_debt,
+  SAFE_CAST(date         AS DATE)     AS date,
+  SAFE_CAST(loaded_at    AS TIMESTAMP) AS loaded_at
+FROM ${ref("external_staging_unf_debt_contracts")}
