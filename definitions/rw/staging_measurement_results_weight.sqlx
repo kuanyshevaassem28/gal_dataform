@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "gal_rw",
+  name: "staging_measurement_results_weight",
+  tags: ["rw", "rw_measurement_results_weight", "staging"],
+  description: "Нормализация результатов взвешивания + BK/SK/hash_diff.",
+  columns: {
+    ui_Measurement_ID:           "Связь с Measurements (BK)",
+    Concrete_Weight_Board_1:     "Вес бетонной панели 1 (FLOAT64)",
+    Concrete_Weight_Board_2:     "Вес бетонной панели 2 (FLOAT64)",
+    Signal_Weight_Light_Board_1: "Сигнал весового светофора для панели 1 (INT64)",
+    Signal_Weight_Light_Board_2: "Сигнал весового светофора для панели 2 (INT64)",
+    Signal_Weight_Light_Total:   "Общий весовой сигнал (INT64)",
+    bk:                           "Бизнес-ключ (CAST(ui_Measurement_ID AS STRING))",
+    surrogate_key:                "SHA256 от BK"
+  }
+}
+
+WITH src AS (
+  SELECT
+    ui_Measurement_ID,
+    r_Concrete_Board_1      AS Concrete_Weight_Board_1,
+    r_Concrete_Board_2      AS Concrete_Weight_Board_2,
+    i_Signal_Color_Board_1  AS Signal_Weight_Light_Board_1,
+    i_Signal_Color_Board_2  AS Signal_Weight_Light_Board_2,
+    i_Signal_Color_Total    AS Signal_Weight_Light_Total
+  FROM ${ref("MeasurementResults_Weight")}
+)
+
+SELECT
+  SAFE_CAST(ui_Measurement_ID AS INT64)     AS ui_Measurement_ID,
+  SAFE_CAST(Concrete_Weight_Board_1 AS FLOAT64) AS Concrete_Weight_Board_1,
+  SAFE_CAST(Concrete_Weight_Board_2 AS FLOAT64) AS Concrete_Weight_Board_2,
+  SAFE_CAST(Signal_Weight_Light_Board_1 AS INT64) AS Signal_Weight_Light_Board_1,
+  SAFE_CAST(Signal_Weight_Light_Board_2 AS INT64) AS Signal_Weight_Light_Board_2,
+  SAFE_CAST(Signal_Weight_Light_Total AS INT64)   AS Signal_Weight_Light_Total,
+  CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING) AS bk,
+  TO_HEX(SHA256(CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING))) AS surrogate_key
+FROM src
