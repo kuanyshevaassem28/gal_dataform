@@ -1,0 +1,223 @@
+config {
+  type: "operations",
+  schema: "gal_unf",
+  name: "history_unf_downtimes",
+  hasOutput: true,
+  tags: ["unf_downtimes","unf","downtimes","history","scd2"],
+
+  description: "UNF — SCD-2 история простоев оборудования. Surrogate_key = begin_time|end_time.",
+
+  columns: {
+    group:        "Группа / оборудование / линия",
+    begin_time:   "Время начала простоя",
+    end_time:     "Время окончания простоя",
+    operator:     "Оператор",
+    reason_code:  "Код причины",
+    reason_name:  "Наименование причины",
+    duration:     "Длительность",
+    date:         "Дата",
+
+    surrogate_key:"SHA256(begin_time|end_time)",
+    is_current:   "Флаг текущей версии",
+    valid_from:   "Начало версии",
+    valid_to:     "Конец версии"
+  }
+}
+
+DECLARE run_dt DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty");
+
+
+-- создаём таблицу если её нет
+CREATE TABLE IF NOT EXISTS ${self()} (
+
+  `group` STRING,
+  begin_time STRING,
+  end_time STRING,
+  operator STRING,
+  reason_code STRING,
+  reason_name STRING,
+  duration STRING,
+  date STRING,
+
+  surrogate_key STRING,
+  is_current BOOL,
+  valid_from DATETIME,
+  valid_to DATETIME
+
+);
+
+
+MERGE ${self()} t
+USING (
+
+WITH SRC AS (
+
+SELECT DISTINCT
+  `group`,
+  begin_time,
+  end_time,
+  operator,
+  reason_code,
+  reason_name,
+  duration,
+  date
+FROM ${ref("external_staging_unf_downtimes")}
+
+),
+
+S AS (
+
+SELECT
+  *,
+
+  TO_HEX(
+    SHA256(
+      CONCAT(
+        COALESCE(begin_time,''),'|',
+        COALESCE(end_time,'')
+      )
+    )
+  ) AS surrogate_key
+
+FROM SRC
+
+),
+
+H_CUR AS (
+
+SELECT *
+FROM ${self()}
+WHERE is_current = TRUE
+
+),
+
+DIFF AS (
+
+SELECT
+  s.*,
+  h.valid_from AS old_valid_from,
+
+  -- новая запись
+  (h.surrogate_key IS NULL) AS is_new,
+
+  -- изменение данных
+  (
+      h.surrogate_key IS NOT NULL
+      AND (
+          s.`group`      IS DISTINCT FROM h.`group`
+       OR s.operator     IS DISTINCT FROM h.operator
+       OR s.reason_code  IS DISTINCT FROM h.reason_code
+       OR s.reason_name  IS DISTINCT FROM h.reason_name
+       OR s.duration     IS DISTINCT FROM h.duration
+      )
+  ) AS is_changed
+
+FROM S s
+LEFT JOIN H_CUR h
+ON s.surrogate_key = h.surrogate_key
+
+),
+
+ROWS_TO_MERGE AS (
+
+-- закрываем старую запись
+
+SELECT
+  surrogate_key,
+  old_valid_from AS valid_from,
+  run_dt AS valid_to,
+  FALSE AS is_current,
+
+  NULL AS `group`,
+  NULL AS begin_time,
+  NULL AS end_time,
+  NULL AS operator,
+  NULL AS reason_code,
+  NULL AS reason_name,
+  NULL AS duration,
+  NULL AS date,
+
+  'U' AS op
+
+FROM DIFF
+WHERE is_changed = TRUE
+
+
+UNION ALL
+
+
+-- вставляем новую запись
+
+SELECT
+  surrogate_key,
+  run_dt AS valid_from,
+  NULL AS valid_to,
+  TRUE AS is_current,
+
+  `group`,
+  begin_time,
+  end_time,
+  operator,
+  reason_code,
+  reason_name,
+  duration,
+  date,
+
+  'I' AS op
+
+FROM DIFF
+WHERE is_new = TRUE OR is_changed = TRUE
+
+)
+
+SELECT * FROM ROWS_TO_MERGE
+
+) s
+
+
+ON t.surrogate_key = s.surrogate_key
+AND t.valid_from   = s.valid_from
+
+
+WHEN MATCHED AND s.op = 'U' THEN
+UPDATE SET
+  is_current = FALSE,
+  valid_to   = s.valid_to
+
+
+WHEN NOT MATCHED AND s.op = 'I' THEN
+INSERT (
+
+  `group`,
+  begin_time,
+  end_time,
+  operator,
+  reason_code,
+  reason_name,
+  duration,
+  date,
+
+  surrogate_key,
+  is_current,
+  valid_from,
+  valid_to
+
+)
+
+VALUES (
+
+  s.`group`,
+  s.begin_time,
+  s.end_time,
+  s.operator,
+  s.reason_code,
+  s.reason_name,
+  s.duration,
+  s.date,
+
+  s.surrogate_key,
+  TRUE,
+  s.valid_from,
+  NULL
+
+);
