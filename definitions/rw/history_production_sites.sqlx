@@ -1,0 +1,104 @@
+config {
+  type: "incremental",
+  schema: "gal_rw",
+  name: "history_production_sites",
+  tags: ["rw", "rw_production_sites", "history", "scd2"],
+  description: "RW Production_sites: SCD2-история по Site_ID.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(
+  incremental(),
+  `
+
+  WITH S AS (
+    SELECT
+      Site_ID,
+      Site_Name, 
+      TO_HEX(
+        SHA256(
+          COALESCE(CAST(Site_ID AS STRING), '')
+        )
+      ) AS surrogate_key
+    FROM ${ref("staging_production_sites")}
+  ),
+ 
+  H_CUR AS (
+    SELECT
+      Site_ID,
+      Site_Name,
+      surrogate_key,
+      valid_from
+    FROM ${self()}
+    WHERE is_current = TRUE
+  ),
+ 
+  NEW_OR_CHANGED AS (
+    SELECT s.*
+    FROM S s
+    LEFT JOIN H_CUR h
+      ON h.surrogate_key = s.surrogate_key
+    WHERE
+      h.surrogate_key IS NULL  
+  ),
+ 
+  CHANGED_KEYS AS (
+    SELECT DISTINCT
+      h.surrogate_key,
+      h.valid_from
+    FROM ${self()} h
+    JOIN NEW_OR_CHANGED s
+      ON h.surrogate_key = s.surrogate_key
+    WHERE h.is_current = TRUE
+  )
+ 
+  SELECT
+    n.Site_ID,
+    n.Site_Name,
+    n.surrogate_key,
+    TRUE AS is_current,
+    CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+    CAST(NULL AS DATETIME)         AS valid_to
+  FROM NEW_OR_CHANGED n
+
+  UNION ALL
+ 
+  SELECT
+    h.Site_ID,
+    h.Site_Name,
+    h.surrogate_key,
+    FALSE AS is_current,
+    h.valid_from,
+    CURRENT_DATETIME("Asia/Almaty") AS valid_to
+  FROM ${self()} h
+  JOIN CHANGED_KEYS ck
+    ON h.surrogate_key = ck.surrogate_key
+   AND h.valid_from    = ck.valid_from
+  WHERE h.is_current = TRUE
+
+  `,
+  `
+ 
+  WITH S AS (
+    SELECT
+      Site_ID,
+      Site_Name,
+      TO_HEX(
+        SHA256(
+          COALESCE(CAST(Site_ID AS STRING), '')
+        )
+      ) AS surrogate_key
+    FROM ${ref("staging_production_sites")}
+  )
+
+  SELECT
+    Site_ID,
+    Site_Name,
+    surrogate_key,
+    TRUE AS is_current,
+    CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+    CAST(NULL AS DATETIME)         AS valid_to
+  FROM S
+
+  `
+)}
