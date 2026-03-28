@@ -1,0 +1,137 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_receipt_payments",
+  tags: ["unf_receipt_payments", "unf", "receipt_payments", "history"],
+  description: "UNF — история поступлений денежных средств (ПоступлениеНаСчет / ПоступлениеВКассу) с is_current, surrogate_key и hash_diff.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    date:              "Дата документа (DATE)",
+    sender_id:         "ID отправителя (организация)",
+    sender_name:       "Наименование отправителя",
+    receiver_id:       "ID получателя (контрагент)",
+    receiver_name:     "Наименование получателя",
+    contract_id:       "ID договора",
+    contract_name:     "Наименование договора",
+    sum:               "Сумма документа в валюте документа",
+    document_id:       "ID документа в 1С",
+    document_number:   "Номер документа",
+    document_datetime: "Дата и время документа (DATETIME)",
+    document_type:     "Тип документа (ПоступлениеНаСчет / ПоступлениеВКассу)",
+    intercompany:      "Признак интеркомпани",
+    active:            "Документ проведен",
+    operation_type:    "Вид операции",
+    currency_id:       "ID валюты",
+    currency_name:     "Наименование валюты",
+    course:            "Курс валюты",
+    sum_kzt:           "Сумма документа в тенге",
+    comment:           "Комментарий",
+
+    valid_from:        "Начало периода действия версии (SCD2)",
+    valid_to:          "Конец периода действия версии (SCD2)",
+    is_current:        "Флаг актуальной версии",
+    surrogate_key:     "Документ + договор",
+    hash_diff:         "Хеш бизнес-полей для детекта изменений"
+  }
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_receipt_payments`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type IN ('Документ.ПоступлениеНаСчет', 'Документ.ПоступлениеВКассу')
+    );
+}
+
+WITH S AS (
+  SELECT
+    SAFE.PARSE_DATE('%Y-%m-%d', s.date) AS date,
+    s.sender_id,
+    s.sender_name,
+    s.receiver_id,
+    s.receiver_name,
+    s.contract_id,
+    s.contract_name,
+    SAFE_CAST(s.sum     AS NUMERIC) AS sum,
+    s.document_id,
+    s.document_number,
+    SAFE.PARSE_DATETIME('%Y-%m-%dT%H:%M:%S', s.document_datetime) AS document_datetime,
+    s.document_type,
+    s.intercompany,
+    s.active,
+    s.operation_type,
+    s.currency_id,
+    s.currency_name,
+    SAFE_CAST(s.course  AS NUMERIC) AS course,
+    SAFE_CAST(s.sum_kzt AS NUMERIC) AS sum_kzt,
+    s.comment,
+
+    TO_HEX(
+      SHA256(
+        COALESCE(s.document_id, '') || '|' ||
+        COALESCE(s.contract_name, '')
+      )
+    ) AS surrogate_key,
+
+    TO_HEX(
+      SHA256(
+        TO_JSON_STRING(STRUCT(
+          SAFE.PARSE_DATE('%Y-%m-%d', s.date)                         AS date,
+          s.sender_id                                                 AS sender_id,
+          s.sender_name                                               AS sender_name,
+          s.receiver_id                                               AS receiver_id,
+          s.receiver_name                                             AS receiver_name,
+          s.contract_id                                               AS contract_id,
+          s.contract_name                                             AS contract_name,
+          SAFE_CAST(s.sum     AS NUMERIC)                             AS sum,
+          s.document_id                                               AS document_id,
+          s.document_number                                           AS document_number,
+          SAFE.PARSE_DATETIME('%Y-%m-%dT%H:%M:%S', s.document_datetime) AS document_datetime,
+          s.document_type                                             AS document_type,
+          s.intercompany                                              AS intercompany,
+          s.active                                                    AS active,
+          s.operation_type                                            AS operation_type,
+          s.currency_id                                               AS currency_id,
+          s.currency_name                                             AS currency_name,
+          SAFE_CAST(s.course  AS NUMERIC)                             AS course,
+          SAFE_CAST(s.sum_kzt AS NUMERIC)                             AS sum_kzt,
+          s.comment                                                   AS comment
+        ))
+      )
+    ) AS hash_diff
+  FROM ${ref("external_staging_unf_receipt_payments")} AS s
+)
+
+SELECT
+  date,
+  sender_id,
+  sender_name,
+  receiver_id,
+  receiver_name,
+  contract_id,
+  contract_name,
+  sum,
+  document_id,
+  document_number,
+  document_datetime,
+  document_type,
+  intercompany,
+  active,
+  operation_type,
+  currency_id,
+  currency_name,
+  course,
+  sum_kzt,
+  comment,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  surrogate_key,
+  hash_diff
+FROM S
