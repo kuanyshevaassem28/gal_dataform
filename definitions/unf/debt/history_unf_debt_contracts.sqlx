@@ -1,0 +1,200 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_debt_contracts",
+  tags: ["unf_debt_contracts", "unf", "debt", "contracts", "history", "scd2"],
+  uniqueKey: ["surrogate_key", "valid_from"],
+}
+
+${when(incremental(), `
+
+WITH S_SRC AS (
+  SELECT
+    company_id,
+    company_name,
+    company_iin_bin,
+    company_group_id,
+    company_group_name,
+    contract_id,
+    contract_name,
+    contract_type,
+    contract_group_of_category_name,
+    organization_id,
+    organization_name,
+    currency_id,
+    currency_name,
+    manager_id,
+    manager_name,
+    debt_sum,
+    debt_sum_buh,
+    date_of_debt,
+    date,
+    loaded_at
+  FROM ${ref("staging_unf_debt_contracts")}
+),
+
+S AS (
+  SELECT
+    s.*,
+    TO_HEX(
+      SHA256(
+        COALESCE(CAST(s.date AS STRING), '')            || '|' ||
+        COALESCE(CAST(s.company_id AS STRING), '')      || '|' ||
+        COALESCE(CAST(s.contract_id AS STRING), '')     || '|' ||
+        COALESCE(CAST(s.organization_id AS STRING), '') || '|' ||
+        COALESCE(CAST(s.currency_id AS STRING), '')
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+),
+
+H_CUR AS (
+  SELECT surrogate_key, valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s USING (surrogate_key)
+  WHERE h.is_current = TRUE
+)
+ 
+SELECT
+  n.company_id,
+  n.company_name,
+  n.company_iin_bin,
+  n.company_group_id,
+  n.company_group_name,
+  n.contract_id,
+  n.contract_name,
+  n.contract_type,
+  n.contract_group_of_category_name,
+  n.organization_id,
+  n.organization_name,
+  n.currency_id,
+  n.currency_name,
+  n.manager_id,
+  n.manager_name,
+  n.debt_sum,
+  n.date_of_debt,
+  n.date,
+  n.loaded_at,
+  TRUE       AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')       AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  n.surrogate_key,
+  n.debt_sum_buh
+FROM NEW_OR_CHANGED n      
+
+UNION ALL
+
+SELECT
+  h.company_id,
+  h.company_name,
+  h.company_iin_bin,
+  h.company_group_id,
+  h.company_group_name,
+  h.contract_id,
+  h.contract_name,
+  h.contract_type,
+  h.contract_group_of_category_name,
+  h.organization_id,
+  h.organization_name,
+  h.currency_id,
+  h.currency_name,
+  h.manager_id,
+  h.manager_name,
+  h.debt_sum,
+  h.date_of_debt,
+  h.date,
+  h.loaded_at,
+  FALSE      AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')       AS valid_to,
+  h.surrogate_key,
+  h.debt_sum_buh,
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON h.surrogate_key = k.surrogate_key
+ AND h.valid_from    = k.valid_from
+WHERE h.is_current = TRUE
+
+`, `
+
+WITH S_SRC AS (
+  SELECT
+    company_id,
+    company_name,
+    company_iin_bin,
+    company_group_id,
+    company_group_name,
+    contract_id,
+    contract_name,
+    contract_type,
+    contract_group_of_category_name,
+    organization_id,
+    organization_name,
+    currency_id,
+    currency_name,
+    manager_id,
+    manager_name,
+    debt_sum,
+    debt_sum_buh,
+    date_of_debt,
+    date,
+    loaded_at
+  FROM ${ref("staging_unf_debt_contracts")}
+),
+
+S AS (
+  SELECT
+    s.*,
+    TO_HEX(
+      SHA256(
+        COALESCE(CAST(s.date AS STRING), '')            || '|' ||
+        COALESCE(CAST(s.company_id AS STRING), '')      || '|' ||
+        COALESCE(CAST(s.contract_id AS STRING), '')     || '|' ||
+        COALESCE(CAST(s.organization_id AS STRING), '') || '|' ||
+        COALESCE(CAST(s.currency_id AS STRING), '')
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+)
+
+SELECT
+  s.company_id,
+  s.company_name,
+  s.company_iin_bin,
+  s.company_group_id,
+  s.company_group_name,
+  s.contract_id,
+  s.contract_name,
+  s.contract_type,
+  s.contract_group_of_category_name,
+  s.organization_id,
+  s.organization_name,
+  s.currency_id,
+  s.currency_name,
+  s.manager_id,
+  s.manager_name,
+  s.debt_sum,
+  s.date_of_debt,
+  s.date,
+  s.loaded_at,
+  TRUE       AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')       AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  s.surrogate_key,
+  s.debt_sum_buh
+FROM S s
+
+`)}
