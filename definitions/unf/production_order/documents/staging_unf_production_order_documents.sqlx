@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "gal_unf",
+  name: "staging_unf_production_order_documents",
+  tags: ["unf_production_order_documents", "unf", "production_order", "documents", "staging"],
+  description: "Staging-слой документов ЗаказНаПроизводство."
+}
+
+SELECT
+  document_id,
+  document_number,
+  TIMESTAMP_MICROS(CAST(document_datetime / 1000 AS INT64)) AS document_datetime,
+  owner_name,
+  manufacturer_name,
+  date,
+  start_datetime,
+  finish_datetime,
+  document_state
+FROM ${ref("external_staging_unf_production_order_documents")}
