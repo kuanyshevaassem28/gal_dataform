@@ -1,0 +1,103 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_production_order_materials",
+  tags: ["unf", "production_order", "materials", "history", "scd2"],
+  description: "UNF — история материалов заказов на производство (Документ.ЗаказНаПроизводство) с SCD2 (is_current, valid_from/valid_to, surrogate_key).",
+  uniqueKey: ["surrogate_key", "valid_from"],
+  columns: {
+    document_id: "ID документа ЗаказНаПроизводство (из UNF). В staging сейчас INT64.",
+    document_number: "Номер документа ЗаказНаПроизводство.",
+    document_datetime: "Дата/время документа ЗаказНаПроизводство.",
+    document_date: "Дата документа ЗаказНаПроизводство.",
+    mat_nomenclature_name: "Номенклатура материала (наименование).",
+    mat_variation_name: "Характеристика материала (наименование).",
+    mat_unit_name: "Единица измерения материала (наименование).",
+    mat_quantity: "Количество материала.",
+    is_current: "Флаг актуальной версии записи (SCD2).",
+    valid_from: "Дата/время начала действия версии записи (SCD2).",
+    valid_to: "Дата/время окончания действия версии записи (SCD2). NULL — актуальная версия.",
+    surrogate_key: "Суррогатный ключ строки материала (SHA256 по document_id + nomenclature + variation)."
+  }
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_production_order_materials`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Документ.ЗаказНаПроизводство"
+    );
+}
+
+WITH s AS (
+  SELECT
+    s.document_id,
+    s.document_number,
+    s.document_datetime,
+    s.document_date,
+    s.mat_nomenclature_name,
+    s.mat_variation_name,
+    s.mat_unit_name,
+    s.mat_quantity,
+
+    -- FIX: document_id = INT64, поэтому приводим к STRING перед COALESCE/конкатенацией
+    TO_HEX(
+      SHA256(
+        COALESCE(CAST(s.document_id AS STRING), '') || '|' ||
+        COALESCE(s.mat_nomenclature_name, '') || '|' ||
+        COALESCE(s.mat_variation_name, '')
+      )
+    ) AS surrogate_key
+  FROM ${ref("staging_unf_production_order_materials")} AS s
+  WHERE s.document_id IS NOT NULL
+)
+
+SELECT
+  document_id,
+  document_number,
+  document_datetime,
+  document_date,
+  mat_nomenclature_name,
+  mat_variation_name,
+  mat_unit_name,
+  mat_quantity,
+  TRUE                            AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  surrogate_key
+FROM s
+
+post_operations {
+  -- (Опциональная защита) если в текущей версии вдруг накопились дубли по surrogate_key,
+  -- оставляем одну "самую свежую", остальные логически закрываем.
+  MERGE `galery-22579.gal_unf.history_unf_production_order_materials` AS t
+  USING (
+    SELECT DISTINCT surrogate_key, valid_from, document_id
+    FROM (
+      SELECT
+        surrogate_key,
+        valid_from,
+        document_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY surrogate_key
+          ORDER BY valid_from DESC, document_id DESC NULLS LAST
+        ) AS rn
+      FROM `galery-22579.gal_unf.history_unf_production_order_materials`
+      WHERE is_current = TRUE
+    )
+    WHERE rn > 1
+  ) d
+  ON  t.is_current    = TRUE
+  AND t.surrogate_key = d.surrogate_key
+  AND t.valid_from    = d.valid_from
+  AND (t.document_id IS NOT DISTINCT FROM d.document_id)
+  WHEN MATCHED THEN
+    UPDATE SET
+      t.is_current = FALSE,
+      t.valid_to   = CURRENT_DATETIME('Asia/Almaty');
+}
