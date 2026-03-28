@@ -1,0 +1,82 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_nomenclature_categories_properties",
+  tags: ["unf_nomenclature_categories_properties", "unf", "history", "nomenclature_categories", "properties"],
+  description: "UNF — история свойств групп категорий номенклатуры (id+prop_id) (SCD2).",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_nomenclature_categories_properties`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND id IN (
+      SELECT CAST(object_id AS STRING)
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Справочник.ГруппыКатегорийНоменклатуры"
+    )
+}
+
+WITH s AS (
+  SELECT
+    id,
+    code,
+    name,
+    CAST(is_group AS BOOL) AS is_group,
+    CAST(deleted  AS BOOL) AS deleted,
+    group_id,
+    group_name,
+
+    prop_id,
+    prop_name,
+
+    TO_HEX(SHA256(
+      COALESCE(id, '') || '|' ||
+      COALESCE(prop_id, '')
+    )) AS surrogate_key
+  FROM ${ref("external_staging_unf_nomenclature_categories_properties")}
+  WHERE id IS NOT NULL
+    AND prop_id IS NOT NULL
+)
+
+SELECT
+  id,
+  code,
+  name,
+  is_group,
+  deleted,
+  group_id,
+  group_name,
+  prop_id,
+  prop_name,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  surrogate_key
+FROM s
+
+post_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_nomenclature_categories_properties` h
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE h.is_current = TRUE
+    AND FARM_FINGERPRINT(TO_JSON_STRING(h)) IN (
+      SELECT row_hash
+      FROM (
+        SELECT
+          surrogate_key,
+          FARM_FINGERPRINT(TO_JSON_STRING(t)) AS row_hash,
+          ROW_NUMBER() OVER (
+            PARTITION BY surrogate_key
+            ORDER BY valid_from DESC, FARM_FINGERPRINT(TO_JSON_STRING(t)) DESC
+          ) AS rn
+        FROM `galery-22579.gal_unf.history_unf_nomenclature_categories_properties` t
+        WHERE t.is_current = TRUE
+      )
+      WHERE rn > 1
+    )
+}
