@@ -1,0 +1,77 @@
+config {
+  type: "table",
+  schema: "gal_rw_marts",
+  name: "rw_results_laser_marts",
+  tags: ["rw", "marts", "rw_measurement_results_lasers"],
+  description: "Март RW: объединяет измерения, результаты по каждому лазеру и участки производства (актуальные записи).",
+  columns: {
+    measurement_id:              "Уникальный идентификатор измерения",
+    measurement_surrogate_key:   "Суррогатный ключ измерения (вычисляется через SHA256)",
+    Source_ID:                   "Идентификатор источника данных",
+    Site_ID:                     "Производственный участок: 1 = ПП2, 2 = ПП3",
+    Site_Name:                   "Название производственного участка",
+    Measurement_Time:            "Дата и время проведения измерения",
+    Recipe_Name:                 "Название рецепта (тип камня)",
+    Comment:                     "Дополнительный комментарий",
+    Waste_Min_Height:            "Минимальная высота для зоны отходов",
+    Target_Min_Height:           "Минимальная высота целевой зоны",
+    Target_Height:               "Целевая высота",
+    Target_Max_Height:           "Максимальная высота целевой зоны",
+    Waste_Max_Height:            "Максимальная высота для зоны отходов",
+    Waste_Min_Weight:            "Минимальный вес для зоны отходов",
+    Target_Min_Weight:           "Минимальный вес целевой зоны",
+    Target_Weight:               "Целевой вес",
+    Target_Max_Weight:           "Максимальный вес целевой зоны",
+    Waste_Max_Weight:            "Максимальный вес для зоны отходов",
+    Surface_Type:                "Тип поверхности: гладкая/шероховатая",
+    Laser_Index:                 "Индекс лазера (номер используемого лазера)",
+    i_Signal_Board_1:            "Сигнал светофора для панели 1",
+    i_Signal_Board_2:            "Сигнал светофора для панели 2",
+    r_AV_Board1_SingleLaser:     "Средняя высота панели 1 по одному лазеру",
+    r_AV_Board2_SingleLaser:     "Средняя высота панели 2 по одному лазеру",
+    i_Stones:                    "Общее количество камней",
+    i_Stones_Board1:             "Количество камней на панели 1",
+    i_Stones_Board2:             "Количество камней на панели 2"
+  }
+}
+
+SELECT
+  -- Измерения
+  m.ui_Measurement_ID AS measurement_id,
+  m.surrogate_key     AS measurement_surrogate_key,
+  m.Source_ID,
+  m.Site_ID,
+  p.Site_Name,
+  TIMESTAMP(m.Measurement_Time) AS Measurement_Time,
+  m.Recipe_Name,
+  m.Comment,
+  m.Waste_Min_Height,
+  m.Target_Min_Height,
+  m.Target_Height,
+  m.Target_Max_Height,
+  m.Waste_Max_Height,
+  m.Waste_Min_Weight,
+  m.Target_Min_Weight,
+  m.Target_Weight,
+  m.Target_Max_Weight,
+  m.Waste_Max_Weight,
+  m.Surface_Type,
+
+  -- Результаты лазеров
+  r.Laser_Index,
+  r.i_Signal_Board_1,
+  r.i_Signal_Board_2,
+  r.r_AV_Board1_SingleLaser,
+  r.r_AV_Board2_SingleLaser,
+  r.i_Stones,
+  r.i_Stones_Board1,
+  r.i_Stones_Board2
+
+FROM ${ref("history_measurements")} AS m
+JOIN ${ref("history_measurement_results_lasers")} AS r
+  ON m.ui_Measurement_ID = r.ui_Measurement_ID
+JOIN ${ref("history_production_sites")} AS p
+  ON m.Site_ID = p.Site_ID
+WHERE m.is_current = TRUE
+  AND r.is_current = TRUE
+  AND p.is_current = TRUE
