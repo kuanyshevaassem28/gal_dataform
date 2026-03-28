@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_rw",
+  name: "MeasurementResults_Weight"
+}
