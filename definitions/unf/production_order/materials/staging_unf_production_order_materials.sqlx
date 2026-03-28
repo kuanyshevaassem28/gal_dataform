@@ -1,0 +1,30 @@
+config {
+  type: "table",
+  schema: "gal_unf",
+  name: "staging_unf_production_order_materials",
+  tags: ["unf_production_order_materials", "unf", "production_order", "materials", "staging"],
+  description: "Staging-слой материалов заказов на производство (Документ.ЗаказНаПроизводство).",
+  columns: {
+    document_id:           "ID документа ЗаказНаПроизводство",
+    document_number:       "Номер документа",
+    document_datetime:     "Дата и время документа (TIMESTAMP)",
+    document_date:         "Дата документа",
+    mat_nomenclature_name: "Наименование номенклатуры материала",
+    mat_variation_name:    "Характеристика номенклатуры материала",
+    mat_unit_name:         "Единица измерения материала",
+    mat_quantity:          "Количество материала"
+  }
+}
+
+SELECT
+  document_id,
+  document_number,
+  date AS document_date,
+  TIMESTAMP_MICROS(
+    CAST(document_datetime / 1000 AS INT64)
+  ) AS document_datetime,
+  mat_nomenclature_name,
+  mat_variation_name,
+  mat_unit_name,
+  mat_quantity
+FROM ${ref("external_staging_unf_production_order_materials")}
