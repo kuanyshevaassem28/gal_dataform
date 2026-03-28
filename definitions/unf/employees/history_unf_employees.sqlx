@@ -1,0 +1,196 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_employees",
+  tags: ["unf_employees", "unf", "employees", "history", "scd2"],
+  description: "UNF: история сотрудников (SCD-2 по employee_id, сравнение всех бизнес-полей).",
+  uniqueKey: ["employee_id", "valid_from"]
+}
+
+${when(incremental(), `
+
+WITH S_SRC AS (
+  SELECT
+    employee_id,
+    employee_name,
+    employee_last_name,
+    employee_first_name,
+    employee_middle_name,
+    employee_group_id,
+    employee_group_name,
+    employee_begin_date,
+    employee_end_date,
+    employee_organization_id,
+    employee_organization_name,
+    employee_department_name,
+    employee_job_title,
+    employee_gender,
+    employee_iin,
+    employee_citizenship
+  FROM ${ref("external_staging_unf_employees")}
+),
+
+H_CUR AS (
+  SELECT
+    employee_id,
+    employee_name,
+    employee_last_name,
+    employee_first_name,
+    employee_middle_name,
+    employee_group_id,
+    employee_group_name,
+    employee_begin_date,
+    employee_end_date,
+    employee_organization_id,
+    employee_organization_name,
+    employee_department_name,
+    employee_job_title,
+    employee_gender,
+    employee_iin,
+    employee_citizenship,
+    valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+DIFF AS (
+  SELECT
+    s.*,
+    h_cur.valid_from AS h_valid_from,
+    -- новый сотрудник?
+    (h_cur.employee_id IS NULL) AS is_new,
+    -- изменились бизнес-поля?
+    (
+      h_cur.employee_id IS NOT NULL AND (
+           COALESCE(s.employee_name,              '') != COALESCE(h_cur.employee_name,              '')
+        OR COALESCE(s.employee_last_name,         '') != COALESCE(h_cur.employee_last_name,         '')
+        OR COALESCE(s.employee_first_name,        '') != COALESCE(h_cur.employee_first_name,        '')
+        OR COALESCE(s.employee_middle_name,       '') != COALESCE(h_cur.employee_middle_name,       '')
+        OR COALESCE(s.employee_group_id,          '') != COALESCE(h_cur.employee_group_id,          '')
+        OR COALESCE(s.employee_group_name,        '') != COALESCE(h_cur.employee_group_name,        '')
+        OR COALESCE(s.employee_begin_date,        '') != COALESCE(h_cur.employee_begin_date,        '')
+        OR COALESCE(s.employee_end_date,          '') != COALESCE(h_cur.employee_end_date,          '')
+        OR COALESCE(s.employee_organization_id,   '') != COALESCE(h_cur.employee_organization_id,   '')
+        OR COALESCE(s.employee_organization_name, '') != COALESCE(h_cur.employee_organization_name, '')
+        OR COALESCE(s.employee_department_name,   '') != COALESCE(h_cur.employee_department_name,   '')
+        OR COALESCE(s.employee_job_title,         '') != COALESCE(h_cur.employee_job_title,         '')
+        OR COALESCE(s.employee_gender,            '') != COALESCE(h_cur.employee_gender,            '')
+        OR COALESCE(s.employee_iin,               '') != COALESCE(h_cur.employee_iin,               '')
+        OR COALESCE(s.employee_citizenship,       '') != COALESCE(h_cur.employee_citizenship,       '')
+      )
+    ) AS is_changed
+  FROM S_SRC s
+  LEFT JOIN H_CUR h_cur
+    USING (employee_id)
+),
+
+NEW_OR_CHANGED AS (
+  SELECT *
+  FROM DIFF
+  WHERE is_new = TRUE OR is_changed = TRUE
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT
+    employee_id,
+    h_valid_from AS valid_from
+  FROM DIFF
+  WHERE is_changed = TRUE
+)
+ 
+SELECT
+  n.employee_id,
+  n.employee_name,
+  n.employee_last_name,
+  n.employee_first_name,
+  n.employee_middle_name,
+  n.employee_group_id,
+  n.employee_group_name,
+  n.employee_begin_date,
+  n.employee_end_date,
+  n.employee_organization_id,
+  n.employee_organization_name,
+  n.employee_department_name,
+  n.employee_job_title,
+  n.employee_gender,
+  n.employee_iin,
+  n.employee_citizenship,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')              AS valid_from,
+  CAST(NULL AS DATETIME)                       AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+ 
+SELECT
+  h.employee_id,
+  h.employee_name,
+  h.employee_last_name,
+  h.employee_first_name,
+  h.employee_middle_name,
+  h.employee_group_id,
+  h.employee_group_name,
+  h.employee_begin_date,
+  h.employee_end_date,
+  h.employee_organization_id,
+  h.employee_organization_name,
+  h.employee_department_name,
+  h.employee_job_title,
+  h.employee_gender,
+  h.employee_iin,
+  h.employee_citizenship,
+  FALSE       AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')              AS valid_to
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON h.employee_id = k.employee_id
+ AND h.valid_from  = k.valid_from
+WHERE h.is_current = TRUE
+
+`, `
+ 
+WITH S_SRC AS (
+  SELECT
+    employee_id,
+    employee_name,
+    employee_last_name,
+    employee_first_name,
+    employee_middle_name,
+    employee_group_id,
+    employee_group_name,
+    employee_begin_date,
+    employee_end_date,
+    employee_organization_id,
+    employee_organization_name,
+    employee_department_name,
+    employee_job_title,
+    employee_gender,
+    employee_iin,
+    employee_citizenship
+  FROM ${ref("external_staging_unf_employees")}
+)
+
+SELECT
+  employee_id,
+  employee_name,
+  employee_last_name,
+  employee_first_name,
+  employee_middle_name,
+  employee_group_id,
+  employee_group_name,
+  employee_begin_date,
+  employee_end_date,
+  employee_organization_id,
+  employee_organization_name,
+  employee_department_name,
+  employee_job_title,
+  employee_gender,
+  employee_iin,
+  employee_citizenship,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME)           AS valid_to
+FROM S_SRC
+
+`)}
