@@ -1,0 +1,188 @@
+config {
+  type: "operations",
+  schema: "gal_rw",
+  name: "history_measurements",
+  hasOutput: true,
+  tags: ["rw", "rw_measurements", "history", "scd2"]
+}
+
+-- 1️⃣ Создаём таблицу если нет
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  ui_Measurement_ID INT64,
+  Source_ID INT64,
+  Site_ID INT64,
+  Measurement_Time DATETIME,
+  Recipe_Name STRING,
+  Comment STRING,
+  Waste_Min_Height FLOAT64,
+  Target_Min_Height FLOAT64,
+  Target_Height FLOAT64,
+  Target_Max_Height FLOAT64,
+  Waste_Max_Height FLOAT64,
+  Waste_Min_Weight FLOAT64,
+  Target_Min_Weight FLOAT64,
+  Target_Weight FLOAT64,
+  Target_Max_Weight FLOAT64,
+  Waste_Max_Weight FLOAT64,
+  Surface_Type STRING,
+  surrogate_key STRING,
+  row_hash STRING,
+  is_current BOOL,
+  valid_from DATETIME,
+  valid_to DATETIME
+);
+
+-- 2️⃣ Закрываем изменённые записи
+
+MERGE INTO ${self()} h
+USING (
+  SELECT
+    ui_Measurement_ID,
+    Source_ID,
+    Site_ID,
+    Measurement_Time,
+    Recipe_Name,
+    Comment,
+    Waste_Min_Height,
+    Target_Min_Height,
+    Target_Height,
+    Target_Max_Height,
+    Waste_Max_Height,
+    Waste_Min_Weight,
+    Target_Min_Weight,
+    Target_Weight,
+    Target_Max_Weight,
+    Waste_Max_Weight,
+    Surface_Type,
+
+    TO_HEX(SHA256(CAST(ui_Measurement_ID AS STRING))) AS surrogate_key,
+
+    TO_HEX(SHA256(CONCAT(
+      COALESCE(CAST(Source_ID AS STRING), ''),
+      COALESCE(CAST(Site_ID AS STRING), ''),
+      COALESCE(CAST(Measurement_Time AS STRING), ''),
+      COALESCE(Recipe_Name, ''),
+      COALESCE(Comment, ''),
+      COALESCE(CAST(Waste_Min_Height AS STRING), ''),
+      COALESCE(CAST(Target_Min_Height AS STRING), ''),
+      COALESCE(CAST(Target_Height AS STRING), ''),
+      COALESCE(CAST(Target_Max_Height AS STRING), ''),
+      COALESCE(CAST(Waste_Max_Height AS STRING), ''),
+      COALESCE(CAST(Waste_Min_Weight AS STRING), ''),
+      COALESCE(CAST(Target_Min_Weight AS STRING), ''),
+      COALESCE(CAST(Target_Weight AS STRING), ''),
+      COALESCE(CAST(Target_Max_Weight AS STRING), ''),
+      COALESCE(CAST(Waste_Max_Weight AS STRING), ''),
+      COALESCE(CAST(Surface_Type AS STRING), '')
+    ))) AS row_hash
+
+  FROM ${ref("staging_measurements")}
+) s
+ON h.surrogate_key = s.surrogate_key
+AND h.is_current = TRUE
+WHEN MATCHED
+AND s.row_hash IS DISTINCT FROM h.row_hash
+THEN UPDATE SET
+  is_current = FALSE,
+  valid_to = CURRENT_DATETIME("Asia/Almaty");
+
+-- 3️⃣ Вставляем новые и изменённые
+INSERT INTO ${self()}
+(
+  ui_Measurement_ID,
+  Source_ID,
+  Site_ID,
+  Measurement_Time,
+  Recipe_Name,
+  Comment,
+  Waste_Min_Height,
+  Target_Min_Height,
+  Target_Height,
+  Target_Max_Height,
+  Waste_Max_Height,
+  Waste_Min_Weight,
+  Target_Min_Weight,
+  Target_Weight,
+  Target_Max_Weight,
+  Waste_Max_Weight,
+  Surface_Type,
+  surrogate_key,
+  row_hash,
+  is_current,
+  valid_from,
+  valid_to
+)
+
+SELECT
+  s.ui_Measurement_ID,
+  s.Source_ID,
+  s.Site_ID,
+  s.Measurement_Time,
+  s.Recipe_Name,
+  s.Comment,
+  s.Waste_Min_Height,
+  s.Target_Min_Height,
+  s.Target_Height,
+  s.Target_Max_Height,
+  s.Waste_Max_Height,
+  s.Waste_Min_Weight,
+  s.Target_Min_Weight,
+  s.Target_Weight,
+  s.Target_Max_Weight,
+  s.Waste_Max_Weight,
+  s.Surface_Type,
+  s.surrogate_key,
+  s.row_hash,
+  TRUE,
+  CURRENT_DATETIME("Asia/Almaty"),
+  NULL
+
+FROM (
+  SELECT
+    ui_Measurement_ID,
+    Source_ID,
+    Site_ID,
+    Measurement_Time,
+    Recipe_Name,
+    Comment,
+    Waste_Min_Height,
+    Target_Min_Height,
+    Target_Height,
+    Target_Max_Height,
+    Waste_Max_Height,
+    Waste_Min_Weight,
+    Target_Min_Weight,
+    Target_Weight,
+    Target_Max_Weight,
+    Waste_Max_Weight,
+    Surface_Type,
+    TO_HEX(SHA256(CAST(ui_Measurement_ID AS STRING))) AS surrogate_key,
+    TO_HEX(SHA256(CONCAT(
+      COALESCE(CAST(Source_ID AS STRING), ''),
+      COALESCE(CAST(Site_ID AS STRING), ''),
+      COALESCE(CAST(Measurement_Time AS STRING), ''),
+      COALESCE(Recipe_Name, ''),
+      COALESCE(Comment, ''),
+      COALESCE(CAST(Waste_Min_Height AS STRING), ''),
+      COALESCE(CAST(Target_Min_Height AS STRING), ''),
+      COALESCE(CAST(Target_Height AS STRING), ''),
+      COALESCE(CAST(Target_Max_Height AS STRING), ''),
+      COALESCE(CAST(Waste_Max_Height AS STRING), ''),
+      COALESCE(CAST(Waste_Min_Weight AS STRING), ''),
+      COALESCE(CAST(Target_Min_Weight AS STRING), ''),
+      COALESCE(CAST(Target_Weight AS STRING), ''),
+      COALESCE(CAST(Target_Max_Weight AS STRING), ''),
+      COALESCE(CAST(Waste_Max_Weight AS STRING), ''),
+      COALESCE(CAST(Surface_Type AS STRING), '')
+    ))) AS row_hash
+  FROM ${ref("staging_measurements")}
+) s
+
+LEFT JOIN ${self()} h
+  ON s.surrogate_key = h.surrogate_key
+  AND h.is_current = TRUE
+
+WHERE
+  h.surrogate_key IS NULL
+  OR s.row_hash IS DISTINCT FROM h.row_hash;
