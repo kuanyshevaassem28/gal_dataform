@@ -1,0 +1,89 @@
+config {
+  type: "table",
+  schema: "gal_unf_marts",
+  name: "unf_sales_marts",
+  tags: ["unf_sales", "unf", "sales", "marts"],
+  description: "Витрина актуальных продаж из 1С (актуальные записи из history_unf_sales)",
+
+  columns: {
+    document_id:         "Идентификатор документа расходная накладная в 1С",
+    document_number:     "Номер документа расходная накладная в 1С",
+    document_datetime:   "Дата и время документа расходная накладная в 1С",
+    date:                "Дата продажи",
+
+    order_no:            "Номер документа заказ покупателя в 1С",
+    seller_name:         "Наименование продавца",
+    buyer_name:          "Наименование покупателя",
+    contract_name:       "Наименование договора",
+    intercompany:        "Интеркомпани (контрагент — собственная организация)",
+    active:              "Активность документа (документ проведен)",
+    operation_type:      "Вид операции (напр. Продажа покупателю, Возврат поставщику)",
+    transport_name:      "Наименование транспортного средства",
+    transport_regnumber: "Регистрационный номер ТС",
+    driver_name:         "ФИО водителя",
+    buyer_group_name:    "Наименование группы покупателя",
+    manager_name:        "Наименование ответственного менеджера в 1С",
+    comment:             "Комментарий документа",
+    stock_name:          "Наименование склада", 
+    cell_name:           "Наименование ячейки",
+    nomenclature_name:   "Наименование номенклатуры",
+    variation_name:      "Наименование характеристики",
+    unit_name:           "Наименование единицы измерения",
+    category_name:       "Наименование категории номенклатуры",
+    price:               "Цена",
+    quantity:            "Количество",
+    quantity_pallets:    "Количество паллет",
+    sum:                 "Сумма",
+    region:              "Регион поставки",
+    object_type:         "Тип объекта",
+    object_class:        "Класс объекта",
+    payment_type:        "Условия оплаты",
+    project_name:        "Наименование проекта",
+    end_customer:        "Наименование конечного заказчика"
+  }
+}
+
+SELECT
+  document_id,
+  document_number,
+  -- Если в history строка/дата-в-строке, превратим в TIMESTAMP
+  SAFE_CAST(document_datetime AS TIMESTAMP) AS document_datetime,
+  SAFE_CAST(date AS DATE)                   AS date,
+
+  order_no,
+  seller_name,
+  buyer_name,
+  contract_name,
+
+  SAFE_CAST(intercompany AS BOOL)          AS intercompany,
+  SAFE_CAST(active       AS BOOL)          AS active,
+  operation_type,
+
+  transport_name,
+  transport_regnumber,
+  driver_name,
+  buyer_group_name,
+  manager_name,
+  comment,
+  stock_name,
+  
+  cell_name,
+
+  nomenclature_name,
+  variation_name,
+  unit_name,
+  category_name,
+
+  SAFE_CAST(price            AS FLOAT64)   AS price,
+  SAFE_CAST(quantity         AS FLOAT64)   AS quantity,
+  SAFE_CAST(quantity_pallets AS FLOAT64)   AS quantity_pallets,
+  SAFE_CAST(`sum`            AS FLOAT64)   AS `sum`,
+
+  region,
+  object_type,
+  object_class,
+  payment_type,
+  project_name,
+  end_customer
+FROM ${ref("history_unf_sales")}
+WHERE is_current = TRUE
