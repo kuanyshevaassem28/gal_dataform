@@ -1,0 +1,97 @@
+config {
+  type: "incremental",
+  schema: "gal_rw",
+  name: "history_measurement_results_height",
+  tags: ["rw", "rw_measurement_results_height", "history", "rw_height_results"],
+  description: "SCD-2 (append-only): вставляет новые/изменившиеся версии без закрытия старых.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(
+  incremental(),
+  `
+  WITH
+  S AS (
+    SELECT
+      ui_Measurement_ID,
+      Signal_Light_Board_1,
+      Signal_Light_Board_2,
+      Signal_Light_Total,
+      Average_Height_Board_1,
+      Average_Height_Board_2,
+      Double_Panel_Flag,
+      Waste_Calc_Method,
+      Laser_1_Active,
+      Laser_2_Active,
+      Laser_3_Active,
+      surrogate_key
+    FROM ${ref("staging_measurement_results_height")}
+  ),
+
+  H_CUR AS (
+    SELECT
+      surrogate_key
+    FROM ${self()}
+    GROUP BY surrogate_key
+  ),
+
+  NEW_OR_CHANGED AS (
+    SELECT s.*
+    FROM S s
+    LEFT JOIN H_CUR h USING (surrogate_key)
+    WHERE h.surrogate_key IS NULL
+  ),
+
+  DEDUP AS (
+    SELECT * EXCEPT(rn)
+    FROM (
+      SELECT
+        n.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY surrogate_key
+          ORDER BY ui_Measurement_ID DESC NULLS LAST
+        ) AS rn
+      FROM NEW_OR_CHANGED n
+    )
+    WHERE rn = 1
+  )
+
+  SELECT
+    ui_Measurement_ID,
+    Signal_Light_Board_1,
+    Signal_Light_Board_2,
+    Signal_Light_Total,
+    Average_Height_Board_1,
+    Average_Height_Board_2,
+    Double_Panel_Flag,
+    Waste_Calc_Method,
+    Laser_1_Active,
+    Laser_2_Active,
+    Laser_3_Active,
+    surrogate_key,
+    TRUE  AS is_current,
+    CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+    CAST(NULL AS DATETIME)          AS valid_to
+  FROM DEDUP
+  `,
+  `
+ 
+  SELECT
+    ui_Measurement_ID,
+    Signal_Light_Board_1,
+    Signal_Light_Board_2,
+    Signal_Light_Total,
+    Average_Height_Board_1,
+    Average_Height_Board_2,
+    Double_Panel_Flag,
+    Waste_Calc_Method,
+    Laser_1_Active,
+    Laser_2_Active,
+    Laser_3_Active,
+    surrogate_key,
+    TRUE  AS is_current,
+    CURRENT_DATETIME("Asia/Almaty") AS valid_from,
+    CAST(NULL AS DATETIME)          AS valid_to
+  FROM ${ref("staging_measurement_results_height")}
+  `
+)}
