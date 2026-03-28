@@ -1,0 +1,101 @@
+config {
+  type: "table",
+  schema: "gal_rw_marts",
+  name: "rw_results_stone_segments_marts",
+  tags: ["rw", "marts", "rw_measurement_results_stone_segments"],
+  description: "Март: измерения RW + сегменты камня + названия участков и логика подмены 0.0 → NULL по видимости лазера.",
+  columns: {
+    measurement_id:                "Уникальный идентификатор измерения",
+    measurement_surrogate_key:     "Суррогатный ключ измерения (вычисляется через SHA256)",
+    Source_ID:                     "Идентификатор источника данных",
+    Site_ID:                       "Производственный участок: 1 = ПП2, 2 = ПП3",
+    Site_Name:                     "Название производственного участка",
+    Measurement_Time:              "Дата и время проведения измерения",
+    Recipe_Name:                   "Название рецепта (тип камня)",
+    Comment:                       "Дополнительный комментарий",
+    Waste_Min_Height:              "Минимальная высота для зоны отходов",
+    Target_Min_Height:             "Минимальная высота целевой зоны",
+    Target_Height:                 "Целевая высота",
+    Target_Max_Height:             "Максимальная высота целевой зоны",
+    Waste_Max_Height:              "Максимальная высота для зоны отходов",
+    Waste_Min_Weight:              "Минимальный вес для зоны отходов",
+    Target_Min_Weight:             "Минимальный вес целевой зоны",
+    Target_Weight:                 "Целевой вес",
+    Target_Max_Weight:             "Максимальный вес целевой зоны",
+    Waste_Max_Weight:              "Максимальный вес для зоны отходов",
+    Surface_Type:                  "Тип поверхности: гладкая/шероховатая",
+    Stone_Index:                   "Индекс сегмента камня",
+    r_Average_Stone_max_1:         "Средняя максимальная высота сегмента камня 1 (NULL если лазер 1 видел меньше камней)",
+    r_Average_Stone_max_2:         "Средняя максимальная высота сегмента камня 2 (NULL если лазер 2 видел меньше камней)",
+    r_Average_Stone_max_3:         "Средняя максимальная высота сегмента камня 3 (NULL если лазер 3 видел меньше камней)"
+  }
+}
+
+WITH stone_counts AS ( 
+  SELECT
+    ui_Measurement_ID,
+    MAX(CASE WHEN Laser_Index = 1 THEN i_Stones END) AS i_stone_laser_1,
+    MAX(CASE WHEN Laser_Index = 2 THEN i_Stones END) AS i_stone_laser_2,
+    MAX(CASE WHEN Laser_Index = 3 THEN i_Stones END) AS i_stone_laser_3
+  FROM ${resolve("gal_rw","history_measurement_results_lasers")}
+  WHERE is_current = TRUE
+  GROUP BY ui_Measurement_ID
+),
+joined_data AS (
+  SELECT
+    seg.*,
+    sc.i_stone_laser_1,
+    sc.i_stone_laser_2,
+    sc.i_stone_laser_3
+  FROM ${resolve("gal_rw","history_measurement_results_stone_segments")} AS seg
+  LEFT JOIN stone_counts sc
+    ON seg.ui_Measurement_ID = sc.ui_Measurement_ID
+)
+
+SELECT
+  -- Измерения
+  m.ui_Measurement_ID AS measurement_id,
+  m.surrogate_key     AS measurement_surrogate_key,
+  m.Source_ID,
+  m.Site_ID,
+  p.Site_Name,
+  TIMESTAMP(m.Measurement_Time) AS Measurement_Time,
+  m.Recipe_Name,
+  m.Comment,
+  m.Waste_Min_Height,
+  m.Target_Min_Height,
+  m.Target_Height,
+  m.Target_Max_Height,
+  m.Waste_Max_Height,
+  m.Waste_Min_Weight,
+  m.Target_Min_Weight,
+  m.Target_Weight,
+  m.Target_Max_Weight,
+  m.Waste_Max_Weight,
+  m.Surface_Type,
+ 
+  r.Stone_Index,
+
+  CASE
+    WHEN r.Stone_Index >= r.i_stone_laser_1 THEN NULL
+    ELSE r.r_Average_Stone_max_1
+  END AS r_Average_Stone_max_1,
+
+  CASE
+    WHEN r.Stone_Index >= r.i_stone_laser_2 THEN NULL
+    ELSE r.r_Average_Stone_max_2
+  END AS r_Average_Stone_max_2,
+
+  CASE
+    WHEN r.Stone_Index >= r.i_stone_laser_3 THEN NULL
+    ELSE r.r_Average_Stone_max_3
+  END AS r_Average_Stone_max_3
+
+FROM  ${ref("history_measurements")}  AS m
+JOIN joined_data r
+  ON m.ui_Measurement_ID = r.ui_Measurement_ID
+JOIN ${ref("history_production_sites")}  AS p
+  ON m.Site_ID = p.Site_ID
+WHERE m.is_current = TRUE
+  AND r.is_current = TRUE
+  AND p.is_current = TRUE
