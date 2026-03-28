@@ -1,0 +1,170 @@
+config {
+  type: "operations",
+  schema: "gal_hess_statistic",
+  name: "Exchange_printer_history",
+  hasOutput: true,
+  tags: ["hess_printer","hess","printer","history","scd2"],
+  description: "HESS — SCD2 история принтера (ID, pallet_SID, plant_part_SID, timestamp).",
+
+  columns: {
+    ID: "Идентификатор записи",
+    timestamp: "Время события",
+    pallet_SID: "SID паллеты",
+    plant_part_SID: "SID участка",
+    is_current: "Флаг актуальной версии",
+    valid_from: "Начало действия версии",
+    valid_to: "Конец действия версии"
+  }
+}
+
+DECLARE run_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
+
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  ID INT64,
+  timestamp TIMESTAMP,
+  pallet_SID INT64,
+  plant_part_SID INT64,
+  is_current BOOL,
+  valid_from DATETIME,
+  valid_to DATETIME
+);
+
+
+MERGE ${self()} t
+USING (
+
+WITH s AS (
+
+  SELECT
+    SAFE_CAST(ID AS INT64) AS ID,
+
+    COALESCE(
+      SAFE_CAST(timestamp AS TIMESTAMP),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING))
+    ) AS timestamp,
+
+    SAFE_CAST(pallet_SID AS INT64) AS pallet_SID,
+    SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID
+
+  FROM ${ref("external_staging_hess_printer")}
+
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY SAFE_CAST(ID AS INT64)
+    ORDER BY
+      COALESCE(
+        SAFE_CAST(timestamp AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING))
+      ) DESC
+  ) = 1
+
+),
+
+h_cur AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+diff AS (
+
+  SELECT
+    s.*,
+    h_cur.valid_from AS old_valid_from,
+
+    (h_cur.ID IS NULL) AS is_new,
+
+    (
+      h_cur.ID IS NOT NULL AND (
+           s.timestamp      IS DISTINCT FROM h_cur.timestamp
+        OR s.pallet_SID     IS DISTINCT FROM h_cur.pallet_SID
+        OR s.plant_part_SID IS DISTINCT FROM h_cur.plant_part_SID
+      )
+    ) AS is_changed
+
+  FROM s
+  LEFT JOIN h_cur
+    ON s.ID = h_cur.ID
+
+),
+
+rows_to_merge AS (
+
+  -- закрываем старую версию
+  SELECT
+    ID,
+    old_valid_from AS valid_from,
+    run_dt AS valid_to,
+    FALSE AS is_current,
+
+    NULL AS timestamp,
+    NULL AS pallet_SID,
+    NULL AS plant_part_SID,
+
+    'U' AS op
+
+  FROM diff
+  WHERE is_changed = TRUE
+
+
+  UNION ALL
+
+
+  -- вставляем новую версию
+  SELECT
+    ID,
+    run_dt AS valid_from,
+    NULL AS valid_to,
+    TRUE AS is_current,
+
+    timestamp,
+    pallet_SID,
+    plant_part_SID,
+
+    'I' AS op
+
+  FROM diff
+  WHERE is_new = TRUE OR is_changed = TRUE
+
+)
+
+SELECT * FROM rows_to_merge
+
+) s
+
+
+ON t.ID = s.ID
+AND t.is_current = TRUE
+
+
+WHEN MATCHED AND s.op = 'U'
+THEN UPDATE SET
+  is_current = FALSE,
+  valid_to = s.valid_to
+
+
+WHEN NOT MATCHED AND s.op = 'I'
+THEN INSERT (
+
+  ID,
+  timestamp,
+  pallet_SID,
+  plant_part_SID,
+  is_current,
+  valid_from,
+  valid_to
+
+)
+VALUES (
+
+  s.ID,
+  s.timestamp,
+  s.pallet_SID,
+  s.plant_part_SID,
+  TRUE,
+  s.valid_from,
+  NULL
+
+);
