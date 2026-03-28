@@ -1,0 +1,140 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_outgoing_payments",
+  tags: ["unf_outgoing_payments", "unf", "outgoing_payments", "history"],
+  description: "UNF — история исходящих платежей (РасходСоСчета / РасходИзКассы) с is_current, surrogate_key и hash_diff.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    date:               "Дата списания денежных средств (DATE)",
+    sender_id:          "ID отправителя",
+    sender_name:        "Наименование отправителя (организации)",
+    receiver_id:        "ID получателя",
+    receiver_name:      "Наименование получателя (контрагента)",
+    contract_id:        "ID договора",
+    contract_name:      "Наименование договора",
+    sum:                "Сумма расхода (NUMERIC)",
+    document_id:        "ID документа исходящего платежа",
+    document_number:    "Номер документа",
+    document_datetime:  "Дата и время документа (строка из 1С)",
+    document_type:      "Тип документа: РасходСоСчета / РасходИзКассы",
+    intercompany:       "Интеркомпани",
+    active:             "Документ проведен",
+    operation_type:     "Вид операции",
+    currency_id:        "ID валюты",
+    currency_name:      "Наименование валюты",
+    course:             "Курс валюты (NUMERIC)",
+    sum_kzt:            "Сумма расхода в KZT (NUMERIC)",
+    comment:            "Комментарий документа",
+
+    valid_from:         "Начало действия версии",
+    valid_to:           "Конец действия версии",
+    is_current:         "Текущая версия",
+    surrogate_key:      "Документ + договор (имя)",
+    hash_diff:          "Хеш по бизнес-полям для детекта изменений"
+  }
+}
+
+pre_operations {
+  UPDATE `${dataform.projectConfig.defaultDatabase}.gal_unf.history_unf_outgoing_payments`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type IN ('Документ.СписаниеСоСчета', 'Документ.СписаниеСКассы')
+    );
+}
+
+WITH S AS (
+  SELECT 
+    SAFE.PARSE_DATE('%Y-%m-%d', s.date) AS date,
+    s.sender_id,
+    s.sender_name,
+    s.receiver_id,
+    s.receiver_name,
+    s.contract_id,
+    s.contract_name,
+    SAFE_CAST(s.sum     AS NUMERIC) AS sum,
+    s.document_id,
+    s.document_number,
+    SAFE.PARSE_DATETIME(
+      '%Y-%m-%d %H:%M:%S',
+      REPLACE(s.document_datetime, 'T', ' ')
+    ) AS document_datetime, 
+    s.document_type,
+    s.intercompany,
+    s.active,
+    s.operation_type,
+    s.currency_id,
+    s.currency_name,
+    SAFE_CAST(s.course  AS NUMERIC) AS course,
+    SAFE_CAST(s.sum_kzt AS NUMERIC) AS sum_kzt,
+    s.comment,
+ 
+    TO_HEX(
+      SHA256(
+        COALESCE(s.document_id, '') || '|' ||
+        COALESCE(s.contract_name, '')
+      )
+    ) AS surrogate_key,
+ 
+    TO_HEX(
+      SHA256(
+        TO_JSON_STRING(STRUCT(
+          SAFE.PARSE_DATE('%Y-%m-%d', s.date),
+          s.sender_id,
+          s.sender_name,
+          s.receiver_id,
+          s.receiver_name,
+          s.contract_id,
+          s.contract_name,
+          SAFE_CAST(s.sum     AS NUMERIC),
+          s.document_id,
+          s.document_number,
+          SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', REPLACE(s.document_datetime, 'T', ' ')),
+          s.document_type,
+          s.intercompany,
+          s.active,
+          s.operation_type,
+          s.currency_id,
+          s.currency_name,
+          SAFE_CAST(s.course  AS NUMERIC),
+          SAFE_CAST(s.sum_kzt AS NUMERIC),
+          s.comment
+        ))
+      )
+    ) AS hash_diff
+  FROM ${ref("external_staging_unf_outgoing_payments")} AS s
+)
+
+SELECT
+  date,
+  sender_id,
+  sender_name,
+  receiver_id,
+  receiver_name,
+  contract_id,
+  contract_name,
+  sum,
+  document_id,
+  document_number,
+  document_datetime,
+  document_type,
+  intercompany,
+  active,
+  operation_type,
+  currency_id,
+  currency_name,
+  course,
+  sum_kzt,
+  comment,
+  CURRENT_DATETIME('Asia/Almaty')                   AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  TRUE                   AS is_current,
+  surrogate_key,
+  hash_diff
+FROM S
