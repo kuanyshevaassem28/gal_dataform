@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_unf",
+  name: "external_staging_unf_nomenclature_variations"
+}
