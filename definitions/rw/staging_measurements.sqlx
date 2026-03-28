@@ -1,0 +1,110 @@
+config {
+  type: "table",
+  schema: "gal_rw",
+  name: "staging_measurements",
+  tags: ["rw", "rw_measurements", "staging"],
+  description: "RW Measurements: staging-слой с нормализацией типов, BK/SK и дедупликацией.",
+  columns: {
+    ui_Measurement_ID: "Уникальный идентификатор измерения (INT64)",
+    Source_ID: "Идентификатор источника данных",
+    Site_ID: "Производственный участок: 1 = ПП3, 2 = ПП2",
+    Measurement_Time: "Дата и время измерения (исходная строка)",
+    Measurement_TS: "Дата и время измерения (TIMESTAMP)",
+    Recipe_Name: "Название рецепта (тип камня)",
+    Comment: "Дополнительный комментарий",
+    Waste_Min_Height: "Мин. высота (отходы)",
+    Target_Min_Height: "Мин. высота (целевая)",
+    Target_Height: "Целевая высота",
+    Target_Max_Height: "Макс. высота (целевая)",
+    Waste_Max_Height: "Макс. высота (отходы)",
+    Waste_Min_Weight: "Мин. вес (отходы)",
+    Target_Min_Weight: "Мин. вес (целевой)",
+    Target_Weight: "Целевой вес",
+    Target_Max_Weight: "Макс. вес (целевой)",
+    Waste_Max_Weight: "Макс. вес (отходы)",
+    Surface_Type: "Тип поверхности (гладкая/шероховатая или код из источника)",
+    bk: "Бизнес-ключ (ui_Measurement_ID)",
+    surrogate_key: "SHA256 от BK"
+  }
+}
+
+WITH src AS (
+  SELECT
+    m.ui_Measurement_ID                   AS ui_Measurement_ID,
+    m.i_Source_ID                         AS Source_ID,
+    CASE
+      WHEN m.i_Site_ID = 3 THEN 1
+      WHEN m.i_Site_ID = 4 THEN 2
+      ELSE m.i_Site_ID
+    END                                   AS Site_ID,
+    m.dt_Measurement_Time                 AS Measurement_Time,
+    m.c_Name                              AS Recipe_Name,
+    m.c_Comment                           AS Comment,
+    m.r_Waste_Min_Height                  AS Waste_Min_Height,
+    m.r_Target_Min_Height                 AS Target_Min_Height,
+    m.r_Target_Height                     AS Target_Height,
+    m.r_Target_Max_Height                 AS Target_Max_Height,
+    m.r_Waste_Max_Height                  AS Waste_Max_Height,
+    m.r_Waste_Min_Weight                  AS Waste_Min_Weight,
+    m.r_Target_Min_Weight                 AS Target_Min_Weight,
+    m.r_Target_Weight                     AS Target_Weight,
+    m.r_Target_Max_Weight                 AS Target_Max_Weight,
+    m.r_Waste_Max_Weight                  AS Waste_Max_Weight,
+    m.i_Surface                           AS Surface_Type
+  FROM ${ref("Measurements")} AS m
+),
+
+typed AS (
+  SELECT
+    SAFE_CAST(ui_Measurement_ID AS INT64)              AS ui_Measurement_ID,
+    SAFE_CAST(Source_ID AS INT64)                      AS Source_ID,
+    SAFE_CAST(Site_ID AS INT64)                        AS Site_ID,
+    TRIM(CAST(Measurement_Time AS STRING))             AS Measurement_Time,
+ 
+    COALESCE(
+      SAFE.PARSE_TIMESTAMP('%F %T',       TRIM(CAST(Measurement_Time AS STRING))),
+      SAFE.PARSE_TIMESTAMP('%F %T.%E*S',  TRIM(CAST(Measurement_Time AS STRING))),
+      SAFE.PARSE_TIMESTAMP('%FT%T',       TRIM(CAST(Measurement_Time AS STRING))),
+      SAFE.PARSE_TIMESTAMP('%FT%T%E*SZ',  TRIM(CAST(Measurement_Time AS STRING)))
+    )                                                  AS Measurement_TS,
+
+    TRIM(CAST(Recipe_Name AS STRING))                  AS Recipe_Name,
+    TRIM(CAST(Comment AS STRING))                      AS Comment,
+    SAFE_CAST(Waste_Min_Height AS FLOAT64)             AS Waste_Min_Height,
+    SAFE_CAST(Target_Min_Height AS FLOAT64)            AS Target_Min_Height,
+    SAFE_CAST(Target_Height AS FLOAT64)                AS Target_Height,
+    SAFE_CAST(Target_Max_Height AS FLOAT64)            AS Target_Max_Height,
+    SAFE_CAST(Waste_Max_Height AS FLOAT64)             AS Waste_Max_Height,
+    SAFE_CAST(Waste_Min_Weight AS FLOAT64)             AS Waste_Min_Weight,
+    SAFE_CAST(Target_Min_Weight AS FLOAT64)            AS Target_Min_Weight,
+    SAFE_CAST(Target_Weight AS FLOAT64)                AS Target_Weight,
+    SAFE_CAST(Target_Max_Weight AS FLOAT64)            AS Target_Max_Weight,
+    SAFE_CAST(Waste_Max_Weight AS FLOAT64)             AS Waste_Max_Weight, 
+    SAFE_CAST(Surface_Type AS INT64)                   AS Surface_Type
+  FROM src
+),
+
+enriched AS (
+  SELECT
+    t.*,
+    CAST(ui_Measurement_ID AS STRING) AS bk,
+    TO_HEX(SHA256(CAST(ui_Measurement_ID AS STRING))) AS surrogate_key
+  FROM typed t
+),
+
+dedup AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      e.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY bk
+        ORDER BY Measurement_TS DESC NULLS LAST, Measurement_Time DESC NULLS LAST
+      ) AS rn
+    FROM enriched e
+  )
+  WHERE rn = 1
+)
+
+SELECT *
+FROM dedup
