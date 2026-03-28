@@ -1,0 +1,56 @@
+config {
+  type: "table",
+  schema: "gal_rw",
+  name: "staging_measurement_results_lasers",
+  tags: ["rw", "rw_measurement_results_lasers", "staging"],
+  description: "Нормализация результатов по лазерам + BK/SK.",
+  columns: {
+    ui_Measurement_ID:          "Связь с Measurements (BK часть 1)",
+    Laser_Index:                "Индекс лазера (BK часть 2)",
+    i_Signal_Board_1:           "Сигнал лазера для панели 1 (INT64)",
+    i_Signal_Board_2:           "Сигнал лазера для панели 2 (INT64)",
+    r_AV_Board1_SingleLaser:    "Средняя высота панели 1 (FLOAT64)",
+    r_AV_Board2_SingleLaser:    "Средняя высота панели 2 (FLOAT64)",
+    i_Stones:                   "Общее количество камней (INT64)",
+    i_Stones_Board1:            "Количество камней на панели 1 (INT64)",
+    i_Stones_Board2:            "Количество камней на панели 2 (INT64)",
+    bk:                         "Бизнес-ключ (ui_Measurement_ID|'|'|Laser_Index)",
+    surrogate_key:              "SHA256 от BK"
+  }
+}
+
+WITH src AS (
+  SELECT
+    ui_Measurement_ID,
+    Laser_Index,
+    i_Signal_Board_1,
+    i_Signal_Board_2,
+    r_AV_Board1_SingleLaser,
+    r_AV_Board2_SingleLaser,
+    i_Stones,
+    i_Stones_Board1,
+    i_Stones_Board2
+  FROM ${ref("MeasurementResults_Lasers")}
+)
+
+SELECT
+  SAFE_CAST(ui_Measurement_ID AS INT64)                 AS ui_Measurement_ID,
+  SAFE_CAST(Laser_Index AS INT64)                       AS Laser_Index,
+  SAFE_CAST(i_Signal_Board_1 AS INT64)                  AS i_Signal_Board_1,
+  SAFE_CAST(i_Signal_Board_2 AS INT64)                  AS i_Signal_Board_2,
+  SAFE_CAST(r_AV_Board1_SingleLaser AS FLOAT64)         AS r_AV_Board1_SingleLaser,
+  SAFE_CAST(r_AV_Board2_SingleLaser AS FLOAT64)         AS r_AV_Board2_SingleLaser,
+  SAFE_CAST(i_Stones AS INT64)                          AS i_Stones,
+  SAFE_CAST(i_Stones_Board1 AS INT64)                   AS i_Stones_Board1,
+  SAFE_CAST(i_Stones_Board2 AS INT64)                   AS i_Stones_Board2,
+
+  CONCAT(
+    CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING), '|',
+    CAST(SAFE_CAST(Laser_Index AS INT64) AS STRING)
+  ) AS bk,
+
+  TO_HEX(SHA256(CONCAT(
+    CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING), '|',
+    CAST(SAFE_CAST(Laser_Index AS INT64) AS STRING)
+  ))) AS surrogate_key
+FROM src
