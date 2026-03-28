@@ -1,0 +1,112 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_production_refuse",
+  tags: ["unf_production_refuse", "unf", "production", "refuse", "history"],
+  description: "UNF — история списаний (отходы/побочные продукты) по Документ.СборкаЗапасов с is_current и surrogate_key.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    document_id:           "ID документа СборкаЗапасов",
+    document_number:       "Номер документа",
+    document_datetime:     "Дата и время документа",
+    document_date:         "Дата документа",
+    ref_nomenclature_name: "Наименование номенклатуры списания (ref)",
+    ref_variation_name:    "Характеристика номенклатуры списания (ref)",
+    ref_unit_name:         "Единица измерения списания (ref)",
+    ref_nomenclature_id:   "ID номенклатуры списания (ref)",
+    ref_variation_id:      "ID характеристики списания (ref)",
+    ref_unit_id:           "ID единицы измерения списания (ref)",
+    ref_quantity:          "Количество списанного материала (ref)",
+
+    valid_from:            "Начало действия версии",
+    valid_to:              "Конец действия версии",
+    is_current:            "Признак актуальной версии",
+    surrogate_key:         "Документ + ref_номенклатура + ref_характеристика"
+  }
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_production_refuse`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Документ.СборкаЗапасов"
+    );
+}
+
+post_operations {
+  MERGE `galery-22579.gal_unf.history_unf_production_refuse` AS t
+  USING (
+    SELECT DISTINCT surrogate_key, valid_from, document_id
+    FROM (
+      SELECT
+        surrogate_key,
+        valid_from,
+        document_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY surrogate_key
+          ORDER BY valid_from DESC, document_id DESC NULLS LAST
+        ) AS rn
+      FROM `galery-22579.gal_unf.history_unf_production_refuse`
+      WHERE is_current = TRUE
+    )
+    WHERE rn > 1
+  ) d
+  ON  t.is_current    = TRUE
+  AND t.surrogate_key = d.surrogate_key
+  AND t.valid_from    = d.valid_from
+  AND (t.document_id IS NOT DISTINCT FROM d.document_id)
+  WHEN MATCHED THEN
+    UPDATE SET
+      t.is_current = FALSE,
+      t.valid_to   = CURRENT_DATETIME('Asia/Almaty');
+}
+
+WITH S AS (
+  SELECT
+    s.document_id,
+    s.document_number,
+    s.document_datetime,
+    s.document_date,
+    s.ref_nomenclature_name,
+    s.ref_variation_name,
+    s.ref_unit_name,
+    s.ref_nomenclature_id,
+    s.ref_variation_id,
+    s.ref_unit_id,
+    s.ref_quantity,
+
+    TO_HEX(
+      SHA256(
+        CONCAT(
+          COALESCE(s.document_id, ''), '|',
+          COALESCE(s.ref_nomenclature_name, ''), '|',
+          COALESCE(s.ref_variation_name, '')
+        )
+      )
+    ) AS surrogate_key
+  FROM ${ref("external_staging_unf_production_refuse")} AS s
+)
+
+SELECT
+  document_id,
+  document_number,
+  document_datetime,
+  document_date,
+  ref_nomenclature_name,
+  ref_variation_name,
+  ref_unit_name,
+  ref_nomenclature_id,
+  ref_variation_id,
+  ref_unit_id,
+  ref_quantity,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  surrogate_key
+FROM S
