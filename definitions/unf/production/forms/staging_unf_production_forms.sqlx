@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  tags: ["unf_production_forms", "unf", "production", "forms", "staging"],
+  schema: "gal_unf",
+  name: "staging_unf_production_forms",
+  columns: {
+    form_id: "ID формы (уникальный идентификатор)",
+    form_name: "Название формы",
+    form_serial: "Серийный номер формы",
+    number_of_cycles: "Количество циклов формы",
+    number_of_reset_cycles: "Количество сброшенных циклов",
+    document_id: "ID документа",
+    document_number: "Номер документа",
+    document_datetime: "Дата и время документа (преобразованное из микросекунд UNIX)",
+    document_date: "Дата документа (без времени)"
+  }
+}
+
+SELECT
+  form_id,
+  form_name,
+  form_serial,
+  number_of_cycles,
+  number_of_reset_cycles,
+  document_id,
+  document_number,
+  TIMESTAMP_MICROS(CAST(document_datetime / 1000 AS INT64)) AS document_datetime,
+  document_date
+FROM ${ref("external_staging_unf_production_forms")}
