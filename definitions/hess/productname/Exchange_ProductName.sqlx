@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_hess_statistic",
+  name: "Exchange_ProductName"
+}
