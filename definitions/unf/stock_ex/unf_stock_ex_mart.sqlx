@@ -1,0 +1,93 @@
+config {
+  type: "table",
+  schema: "gal_unf_marts",
+  name: "unf_stock_ex_mart",
+  description: "Витрина данных о складских остатках из unf_stock_ex, только актуальные записи."
+}
+
+SELECT
+  se.owner_name,
+  se.stock_name,
+  se.cell_name,
+  se.nomenclature_name,
+  se.variation_name,
+  se.unit_name,
+  se.category_name,
+
+  CASE
+    WHEN se.category_name IN (
+      'Пескобетон товарный',
+      'Бетон товарный',
+      'Раствор товарный'
+    ) THEN 'Бетон и растворы'
+
+    WHEN se.category_name IN (
+      'Доставка бетона'
+    ) THEN 'Доставка бетона'
+
+    WHEN se.category_name IN (
+      'Плиты тротуарные',
+      'Ступени бетонные',
+      'Камни бортовые',
+      'Тактильные наземные указатели',
+      'Палисад бетонный'
+    ) THEN 'Мелкоштучные изделия'
+
+    WHEN se.category_name IN (
+      'Прочие услуги'
+    ) THEN 'Услуги'
+
+    ELSE NULL
+  END AS business_segment,
+
+  se.prop_thickness,
+  se.prop_texture,
+  se.prop_impregnation,
+  se.prop_color,
+  se.prop_category,
+  se.prop_grade,
+  se.squares_per_pallet,
+  se.pieces_per_pallet,
+  se.quantity,
+  se.quantity_pallets,
+  se.date,
+  ls.last_sale,
+  lp.last_prod
+
+FROM ${ref("history_unf_stock_ex")} se
+
+LEFT JOIN (
+
+  SELECT
+    nomenclature_name,
+    variation_name,
+    MAX(date) AS last_sale
+  FROM ${ref("history_unf_sales")}
+  WHERE is_current = TRUE
+  GROUP BY
+    nomenclature_name,
+    variation_name
+
+) ls
+ON ls.nomenclature_name = se.nomenclature_name
+AND ls.variation_name = se.variation_name
+
+
+LEFT JOIN (
+
+  SELECT
+    nomenclature_name,
+    variation_name,
+    MAX(document_date) AS last_prod
+  FROM ${ref("history_unf_production_products")}
+  WHERE is_current = TRUE
+  GROUP BY
+    nomenclature_name,
+    variation_name
+
+) lp
+ON lp.nomenclature_name = se.nomenclature_name
+AND lp.variation_name = se.variation_name
+
+
+WHERE se.is_current = TRUE
