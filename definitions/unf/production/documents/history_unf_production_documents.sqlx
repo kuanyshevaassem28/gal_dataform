@@ -1,0 +1,96 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_production_documents",
+  tags: ["unf_production_documents", "unf", "production", "documents", "history"],
+  description: "UNF — история производственных документов (Документ.СборкаЗапасов) с SCD2 логикой, флагом is_current и surrogate_key.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    document_id:        "ID документа (СборкаЗапасов)",
+    document_number:    "Номер документа",
+    document_date:      "Дата документа (DATE)",
+    owner_name:         "Владелец / компания",
+    stock_name:         "Склад",
+    cell_name:          "Ячейка хранения",
+    manufacturer_name:  "Производитель",
+    active:             "Флаг проведения документа в 1С",
+
+    surrogate_key:      "Уникальный ключ SCD2: SHA256(document_id)",
+    valid_from:         "Начало действия версии",
+    valid_to:           "Конец действия версии",
+    is_current:         "Признак текущей версии (TRUE)"
+  }
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_production_documents`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Документ.СборкаЗапасов"
+    );
+}
+
+post_operations {
+  MERGE `galery-22579.gal_unf.history_unf_production_documents` AS t
+  USING (
+    SELECT DISTINCT surrogate_key, valid_from, document_id
+    FROM (
+      SELECT
+        surrogate_key,
+        valid_from,
+        document_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY surrogate_key
+          ORDER BY valid_from DESC, document_id DESC NULLS LAST
+        ) AS rn
+      FROM `galery-22579.gal_unf.history_unf_production_documents`
+      WHERE is_current = TRUE
+    )
+    WHERE rn > 1
+  ) d
+  ON  t.is_current    = TRUE
+  AND t.surrogate_key = d.surrogate_key
+  AND t.valid_from    = d.valid_from
+  AND (t.document_id IS NOT DISTINCT FROM d.document_id)
+  WHEN MATCHED THEN
+    UPDATE SET
+      t.is_current = FALSE,
+      t.valid_to   = CURRENT_DATETIME('Asia/Almaty');
+}
+
+WITH S AS (
+  SELECT
+    s.document_id,
+    s.document_number,
+    s.document_date,
+    s.owner_name,
+    s.stock_name,
+    s.cell_name,
+    s.manufacturer_name,
+    s.active,
+
+    TO_HEX(SHA256(COALESCE(s.document_id, ""))) AS surrogate_key
+  FROM ${ref("external_staging_unf_production_documents")} AS s
+)
+
+SELECT
+  document_id,
+  document_number,
+  document_date,
+  owner_name,
+  stock_name,
+  cell_name,
+  manufacturer_name,
+  active,
+
+  surrogate_key,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current
+FROM S
