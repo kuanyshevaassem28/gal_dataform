@@ -1,0 +1,134 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_customers_data_customer",
+  tags: ["unf_customers_data_customer", "history", "scd2"],
+  description: "UNF — история контрагентов (customers_data_customer) на pre_operations+insert. Закрываем is_current по data_changes, затем вставляем новые версии. surrogate_key = SHA256(customer_id|customer_iin_bin).",
+  uniqueKey: ["surrogate_key", "valid_from"],
+  columns: {
+    customer_id: "ID контрагента",
+    customer_code: "Код контрагента",
+    customer_name: "Наименование",
+    customer_fullname: "Полное наименование",
+    customer_deleted: "Пометка удаления",
+    customer_group_id: "ID группы",
+    customer_group_name: "Группа",
+    customer_type: "Тип контрагента",
+    customer_iin_bin: "ИИН/БИН",
+    customer_is_buyer: "Покупатель",
+    customer_is_seller: "Поставщик",
+    customer_is_other: "Прочее",
+    customer_manager_id: "ID менеджера",
+    customer_manager_name: "Менеджер",
+    customer_country_id: "ID страны",
+    customer_country_name: "Страна",
+    customer_activity: "Вид деятельности",
+    customer_holding_id: "ID холдинга",
+    customer_holding_name: "Холдинг",
+    customer_default_bank_account: "Банковский счет",
+    customer_shipment_ban: "Запрет отгрузки",
+    customer_debt_limit_sum: "Лимит задолженности",
+    contact_legal_address: "Юридический адрес",
+    contact_phone: "Телефон",
+    contact_actual_address: "Фактический адрес",
+    contact_email: "Email",
+    contact_delivery_address: "Адрес доставки",
+    valid_from: "Начало версии",
+    valid_to: "Конец версии",
+    is_current: "Актуальная версия",
+    surrogate_key: "Surrogate key"
+  }
+}
+
+pre_operations {
+  UPDATE `${dataform.projectConfig.defaultDatabase}.gal_unf.history_unf_customers_data_customer`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND customer_id IN (
+      SELECT CAST(object_id AS STRING)
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Справочник.Контрагенты"
+    );
+}
+
+WITH S AS (
+  SELECT
+    CAST(customer_id AS STRING)            AS customer_id,
+    CAST(customer_code AS STRING)          AS customer_code,
+    CAST(customer_name AS STRING)          AS customer_name,
+    CAST(customer_fullname AS STRING)      AS customer_fullname,
+    SAFE_CAST(customer_deleted AS BOOL)    AS customer_deleted,
+    CAST(customer_group_id AS STRING)      AS customer_group_id,
+    CAST(customer_group_name AS STRING)    AS customer_group_name,
+    CAST(customer_type AS STRING)          AS customer_type,
+    CAST(customer_iin_bin AS STRING)       AS customer_iin_bin,
+    SAFE_CAST(customer_is_buyer AS BOOL)   AS customer_is_buyer,
+    SAFE_CAST(customer_is_seller AS BOOL)  AS customer_is_seller,
+    SAFE_CAST(customer_is_other AS BOOL)   AS customer_is_other,
+    CAST(customer_manager_id AS STRING)    AS customer_manager_id,
+    CAST(customer_manager_name AS STRING)  AS customer_manager_name,
+    CAST(customer_country_id AS STRING)    AS customer_country_id,
+    CAST(customer_country_name AS STRING)  AS customer_country_name,
+    CAST(customer_activity AS STRING)      AS customer_activity,
+    CAST(customer_holding_id AS STRING)    AS customer_holding_id,
+    CAST(customer_holding_name AS STRING)  AS customer_holding_name,
+    CAST(customer_default_bank_account AS STRING) AS customer_default_bank_account,
+    SAFE_CAST(customer_shipment_ban AS BOOL)      AS customer_shipment_ban,
+    SAFE_CAST(customer_debt_limit_sum AS INT64)   AS customer_debt_limit_sum,
+
+    CAST(contact_legal_address AS STRING)    AS contact_legal_address,
+    CAST(contact_phone AS STRING)            AS contact_phone,
+    CAST(contact_actual_address AS STRING)   AS contact_actual_address,
+    CAST(contact_email AS STRING)            AS contact_email,
+    CAST(contact_delivery_address AS STRING) AS contact_delivery_address,
+
+    TO_HEX(SHA256(
+      COALESCE(CAST(customer_id AS STRING), '') || '|' ||
+      COALESCE(CAST(customer_iin_bin AS STRING), '')
+    )) AS surrogate_key
+  FROM ${ref("external_staging_unf_customers_data_customer")}
+  WHERE customer_id IS NOT NULL
+)
+
+SELECT
+  customer_id,
+  customer_code,
+  customer_name,
+  customer_fullname,
+  customer_deleted,
+  customer_group_id,
+  customer_group_name,
+  customer_type,
+  customer_iin_bin,
+  customer_is_buyer,
+  customer_is_seller,
+  customer_is_other,
+  customer_manager_id,
+  customer_manager_name,
+  customer_country_id,
+  customer_country_name,
+  customer_activity,
+  customer_holding_id,
+  customer_holding_name,
+  customer_default_bank_account,
+  customer_shipment_ban,
+  customer_debt_limit_sum,
+  contact_legal_address,
+  contact_phone,
+  contact_actual_address,
+  contact_email,
+  contact_delivery_address,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  surrogate_key
+FROM S
+${when(incremental(), `
+WHERE customer_id IN (
+  SELECT CAST(object_id AS STRING)
+  FROM \`galery-22579.gal_unf.external_staging_unf_data_changes\`
+  WHERE object_type = "Справочник.Контрагенты"
+)
+`, ``)}
