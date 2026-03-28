@@ -1,0 +1,139 @@
+config {
+  type: "table",
+  schema: "gal_unf",
+  name: "staging_unf_production_standards",
+  tags: ["unf_production_standards", "unf", "production_standards", "staging"],
+  description: "Нормативы производства",
+  columns: {
+    period: "Дата, начиная с которой действуют значения в записи",
+    manufacturer_id: "Идентификатор изготовителя (структурного подразделения) в системе 1С",
+    manufacturer_name: "Наименование изготовителя (структурного подразделения)",
+    nomenclature_id: "Идентификатор продукции (номенклатуры) в системе 1С",
+    nomenclature_name: "Наименование продукции (номенклатуры)",
+    unit_id: "Идентификатор единицы измерения продукции в системе 1С",
+    unit_name: "Наименование единицы измерения продукции",
+    category_id: "Идентификатор категории продукции в системе 1С",
+    category_name: "Наименование категории продукции (например, «Камни бортовые», «Плиты тротуарные»)",
+    thickness: "Толщина продукции (например, «80 ММ», «60 ММ»)",
+    layers_count_in_pallet: "Количество слоев в паллете",
+    pieces_per_layer: "Количество штук продукции в слое",
+    pallet_weight: "Масса нетто продукции в одной полной паллете",
+    quantity_in_pallet: "Количество продукции (в единицах измерения) в одной полной паллете",
+    standard_takt_time: "Нормативное количество тактов в секундах",
+    tape_name: "Материал ленты для обвязки паллеты",
+    tape_quantity: "Нормативное количество ленты на одну паллету",
+    tape_ext_quantity: "Альтернативное (увеличенное) количество ленты на одну паллету для повышенной надежности упаковки",
+    wrap_name: "Материал пленки для обвязки паллеты",
+    wrap_quantity: "Нормативное количество пленки на одну паллету",
+    spunbond_name: "Наименование межслойного материала (спанбонд), укладываемого между слоями продукции",
+    spunbond_quantity: "Количество межслойного материала на одну паллету",
+    url: "URL-адрес страницы продукции",
+    bk: "Бизнес-ключ: period|manufacturer_id|nomenclature_id|thickness (служебное поле для дедупликации)",
+    surrogate_key: "Суррогатный ключ (хэш бизнес-ключа), используется для SCD-2 и связок",
+    hash_diff: "Хэш-снимок содержимого записи для детекции изменений"
+  }
+}
+
+WITH
+  src AS (
+    SELECT *
+    FROM ${ref("external_staging_unf_production_standards")} 
+  ),
+  typed AS (
+    SELECT
+      -- period → DATE с поддержкой разных форматов
+      CASE
+        WHEN REGEXP_CONTAINS(TRIM(IFNULL(period, '')), r'^\d{4}-\d{2}-\d{2}$')
+          THEN SAFE.PARSE_DATE('%Y-%m-%d', TRIM(period))
+        WHEN REGEXP_CONTAINS(TRIM(IFNULL(period, '')), r'^\d{4}-\d{2}$')
+          THEN SAFE.PARSE_DATE('%Y-%m-%d', CONCAT(TRIM(period), '-01'))
+        WHEN REGEXP_CONTAINS(TRIM(IFNULL(period, '')), r'^\d{2}\.\d{2}\.\d{4}$')
+          THEN SAFE.PARSE_DATE('%d.%m.%Y', TRIM(period))
+        ELSE NULL
+      END AS period,
+
+      TRIM(manufacturer_id) AS manufacturer_id,
+      TRIM(nomenclature_id) AS nomenclature_id,
+      TRIM(thickness) AS thickness,
+      TRIM(manufacturer_name) AS manufacturer_name,
+      TRIM(nomenclature_name) AS nomenclature_name,
+
+      SAFE_CAST(layers_count_in_pallet AS INT64)   AS layers_count_in_pallet,
+      SAFE_CAST(pieces_per_layer       AS FLOAT64) AS pieces_per_layer,
+      SAFE_CAST(pallet_weight          AS INT64)   AS pallet_weight,
+      SAFE_CAST(quantity_in_pallet     AS FLOAT64) AS quantity_in_pallet,
+      SAFE_CAST(standard_takt_time     AS INT64)   AS standard_takt_time,
+
+      TRIM(tape_name) AS tape_name,
+      SAFE_CAST(tape_quantity      AS FLOAT64) AS tape_quantity,
+      SAFE_CAST(tape_ext_quantity  AS FLOAT64) AS tape_ext_quantity,
+
+      TRIM(wrap_name) AS wrap_name,
+      SAFE_CAST(wrap_quantity AS FLOAT64) AS wrap_quantity,
+
+      TRIM(spunbond_name) AS spunbond_name,
+      SAFE_CAST(spunbond_quantity AS FLOAT64) AS spunbond_quantity,
+
+      TRIM(url)        AS url,
+      TRIM(unit_id)    AS unit_id,
+      TRIM(unit_name)  AS unit_name,
+      TRIM(category_id)   AS category_id,
+      TRIM(category_name) AS category_name
+    FROM src
+  ),
+  enriched AS (
+    SELECT
+      *,
+      CONCAT(
+        IFNULL(FORMAT_DATE('%Y-%m-%d', period), ''), '|',
+        IFNULL(TRIM(manufacturer_id), ''), '|',
+        IFNULL(TRIM(nomenclature_id), ''), '|',
+        IFNULL(TRIM(thickness), '')
+      ) AS bk,
+
+      TO_HEX(SHA256(CONCAT(
+        IFNULL(FORMAT_DATE('%Y-%m-%d', period), ''), '|',
+        IFNULL(TRIM(manufacturer_id), ''), '|',
+        IFNULL(TRIM(nomenclature_id), ''), '|',
+        IFNULL(TRIM(thickness), '')
+      ))) AS surrogate_key,
+
+      TO_HEX(SHA256(CONCAT(
+        IFNULL(TRIM(manufacturer_name), ''), '|',
+        IFNULL(TRIM(nomenclature_name), ''), '|',
+        IFNULL(TRIM(thickness), ''), '|',
+        IFNULL(CAST(layers_count_in_pallet AS STRING), ''), '|',
+        IFNULL(CAST(pieces_per_layer AS STRING), ''), '|',
+        IFNULL(CAST(pallet_weight AS STRING), ''), '|',
+        IFNULL(CAST(quantity_in_pallet AS STRING), ''), '|',
+        IFNULL(CAST(standard_takt_time AS STRING), ''), '|',
+        IFNULL(TRIM(tape_name), ''), '|',
+        IFNULL(CAST(tape_quantity AS STRING), ''), '|',
+        IFNULL(CAST(tape_ext_quantity AS STRING), ''), '|',
+        IFNULL(TRIM(wrap_name), ''), '|',
+        IFNULL(CAST(wrap_quantity AS STRING), ''), '|',
+        IFNULL(TRIM(spunbond_name), ''), '|',
+        IFNULL(CAST(spunbond_quantity AS STRING), ''), '|',
+        IFNULL(TRIM(url), ''), '|',
+        IFNULL(TRIM(unit_id), ''), '|',
+        IFNULL(TRIM(unit_name), ''), '|',
+        IFNULL(TRIM(category_id), ''), '|',
+        IFNULL(TRIM(category_name), '')
+      ))) AS hash_diff
+    FROM typed
+  ),
+  dedup AS (
+    SELECT * EXCEPT(rn)
+    FROM (
+      SELECT
+        e.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY bk
+          ORDER BY period DESC NULLS LAST
+        ) AS rn
+      FROM enriched e
+    )
+    WHERE rn = 1
+  )
+SELECT *
+FROM dedup
