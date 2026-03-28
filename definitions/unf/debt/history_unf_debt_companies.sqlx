@@ -1,0 +1,143 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_debt_companies",
+  tags: ["unf_debt_companies", "unf", "debt", "companies", "history", "scd2"],
+  description: "UNF: история задолженности по компаниям (SCD-2 по surrogate_key = date|company_name|company_id, hash_diff по суммам и группе).",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+${when(incremental(), `
+
+WITH S_SRC AS (
+  SELECT *
+  FROM ${ref("external_staging_unf_debt_companies")}
+),
+
+S AS (
+  SELECT
+    s.company_id,
+    s.company_name,
+    s.company_iin_bin,
+    s.company_group_id,
+    s.company_group_name,
+    s.debt_sum_total,
+    s.debt_sum_total_buh,
+    s.date,
+    s.loaded_at,
+ 
+    TO_HEX(
+      SHA256(
+        COALESCE(CAST(s.date AS STRING), '') || '|' ||
+        COALESCE(s.company_name, '')         || '|' ||
+        COALESCE(CAST(s.company_id AS STRING), '')
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+),
+
+H_CUR AS (
+  SELECT
+    surrogate_key,
+    valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s USING (surrogate_key)
+  WHERE h.is_current = TRUE
+)
+  
+SELECT
+  n.company_id,
+  n.company_name,
+  n.company_iin_bin,
+  n.company_group_id,
+  n.company_group_name,
+  n.debt_sum_total,
+  n.debt_sum_total_buh,
+  n.date,
+  n.loaded_at,
+  n.surrogate_key,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL 
+  
+SELECT
+  h.company_id,
+  h.company_name,
+  h.company_iin_bin,
+  h.company_group_id,
+  h.company_group_name,
+  h.debt_sum_total,
+  h.debt_sum_total_buh,
+  h.date,
+  h.loaded_at,
+  h.surrogate_key,
+  FALSE       AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')        AS valid_to
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON h.surrogate_key = k.surrogate_key
+ AND h.valid_from    = k.valid_from
+WHERE h.is_current = TRUE
+
+`, `
+ 
+WITH S_SRC AS (
+  SELECT *
+  FROM ${ref("external_staging_unf_debt_companies")}
+),
+
+S AS (
+  SELECT
+    s.company_id,
+    s.company_name,
+    s.company_iin_bin,
+    s.company_group_id,
+    s.company_group_name,
+    s.debt_sum_total,
+    s.debt_sum_total_buh,
+    s.date,
+    s.loaded_at,
+
+    TO_HEX(
+      SHA256(
+        COALESCE(CAST(s.date AS STRING), '') || '|' ||
+        COALESCE(s.company_name, '')         || '|' ||
+        COALESCE(CAST(s.company_id AS STRING), '')
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+)
+
+SELECT
+  company_id,
+  company_name,
+  company_iin_bin,
+  company_group_id,
+  company_group_name,
+  debt_sum_total,
+  debt_sum_total_buh,
+  date,
+  loaded_at,
+  surrogate_key,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S
+`)}
