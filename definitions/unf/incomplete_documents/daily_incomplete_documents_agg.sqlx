@@ -1,0 +1,117 @@
+config {
+  type: "incremental",
+  schema: "gal_unf_marts",
+  name: "daily_incomplete_documents_agg",
+  tags: ["unf_incomplete_documents", "unf", "incomplete_documents", "marts", "daily_agg"],
+  description: "Ежедневный агрегат по неполным документам (по менеджерам и возрасту документов).",
+  uniqueKey: ["run_date", "manager_name"],
+
+  columns: {
+    run_date:     "Дата запуска агрегации (срез)",
+    manager_name: "ФИО менеджера",
+    total_docs:   "Всего неполных документов на run_date",
+    lt_60:        "Количество документов, возраст которых < 60 дней",
+    d60_180:      "Количество документов, возраст которых от 60 до 180 дней включительно",
+    d181_360:     "Количество документов, возраст которых от 181 до 360 дней включительно",
+    gt_360:       "Количество документов, возраст которых > 360 дней",
+    created_at:   "Время пересчёта агрегата для данного run_date"
+  }
+}
+ 
+${when(
+  incremental(),
+  `
+
+WITH base AS (
+  SELECT
+    manager_name,
+    COALESCE(
+      DATE(SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(document_datetime AS STRING))),
+      DATE(SAFE.PARSE_DATETIME('%d.%m.%Y %H:%M:%S', CAST(document_datetime AS STRING))),
+      SAFE.PARSE_DATE('%Y-%m-%d', CAST(document_date AS STRING)),
+      SAFE.PARSE_DATE('%d.%m.%Y', CAST(document_date AS STRING)),
+      date
+    ) AS doc_date
+  FROM ${ref("history_unf_incomplete_documents")}
+  WHERE is_current = TRUE
+),
+
+agg_new AS (
+  SELECT
+    CURRENT_DATETIME('Asia/Almaty')  AS run_date,
+    manager_name,
+    COUNT(*) AS total_docs,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) < 60)          AS lt_60,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) BETWEEN 60 AND 180)  AS d60_180,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) BETWEEN 181 AND 360) AS d181_360,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) > 360)         AS gt_360
+  FROM base
+  GROUP BY CURRENT_DATETIME('Asia/Almaty') , manager_name
+),
+
+existing AS ( 
+  SELECT *
+  FROM ${self()}
+  WHERE run_date != CURRENT_DATETIME('Asia/Almaty') 
+)
+
+SELECT
+  *
+FROM existing
+
+UNION ALL
+
+SELECT
+  run_date,
+  manager_name,
+  total_docs,
+  lt_60,
+  d60_180,
+  d181_360,
+  gt_360,
+  CURRENT_TIMESTAMP() AS created_at
+FROM agg_new
+
+`,
+  `
+ 
+WITH base AS (
+  SELECT
+    manager_name,
+    COALESCE(
+      DATE(SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(document_datetime AS STRING))),
+      DATE(SAFE.PARSE_DATETIME('%d.%m.%Y %H:%M:%S', CAST(document_datetime AS STRING))),
+      SAFE.PARSE_DATE('%Y-%m-%d', CAST(document_date AS STRING)),
+      SAFE.PARSE_DATE('%d.%m.%Y', CAST(document_date AS STRING)),
+      date
+    ) AS doc_date
+  FROM ${ref("history_unf_incomplete_documents")}
+  WHERE is_current = TRUE
+),
+
+agg_new AS (
+  SELECT
+    CURRENT_DATETIME('Asia/Almaty')  AS run_date,
+    manager_name,
+    COUNT(*) AS total_docs,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) < 60)          AS lt_60,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) BETWEEN 60 AND 180)  AS d60_180,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) BETWEEN 181 AND 360) AS d181_360,
+    COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATETIME('Asia/Almaty') , doc_date, DAY) > 360)         AS gt_360
+  FROM base
+  GROUP BY CURRENT_DATETIME('Asia/Almaty') , manager_name
+)
+
+SELECT
+  run_date,
+  manager_name,
+  total_docs,
+  lt_60,
+  d60_180,
+  d181_360,
+  gt_360,
+  CURRENT_TIMESTAMP() AS created_at
+FROM agg_new
+
+`
+)}
