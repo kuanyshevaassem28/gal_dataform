@@ -1,0 +1,52 @@
+config {
+  type: "table",
+  schema: "gal_unf_marts",
+  name: "unf_receipt_payments_marts",
+  tags: ["unf_receipt_payments", "unf", "receipt_payments", "marts"],
+  description: "Витрина актуальных поступлений денежных средств (is_current=TRUE, active=TRUE).",
+
+  columns: {
+    date:               "Дата поступления денежных средств",
+    sender_name:        "Наименование отправителя (организации)",
+    receiver_name:      "Наименование получателя (контрагента)",
+    contract_name:      "Наименование договора",
+    sum:                "Сумма поступления (NUMERIC)",
+
+    document_id:        "ID документа",
+    document_number:    "Номер документа",
+    document_datetime:  "Дата и время документа",
+    document_type:      "Тип документа: ПоступлениеНаСчет / ПоступлениеВКассу",
+
+    intercompany:       "Признак интеркомпани",
+    active:             "Признак проведения документа",
+
+    operation_type:     "Тип операции",
+
+    currency_name:      "Наименование валюты",
+    course:             "Курс валюты",
+    sum_kzt:            "Сумма в KZT",
+
+    comment:            "Комментарий документа"
+  }
+}
+
+SELECT
+  date,
+  sender_name,
+  receiver_name,
+  contract_name,
+  sum,
+  document_id,
+  document_number,
+  document_datetime,
+  document_type,
+  intercompany,
+  active,
+  operation_type,
+  currency_name,
+  course,
+  sum_kzt,
+  comment
+FROM ${ref("history_unf_receipt_payments")}
+WHERE is_current = TRUE
+  AND active = TRUE
