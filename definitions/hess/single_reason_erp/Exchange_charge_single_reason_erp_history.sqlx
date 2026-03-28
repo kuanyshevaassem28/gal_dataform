@@ -1,0 +1,172 @@
+config {
+  type: "incremental",
+  schema: "gal_hess_statistic",
+  name: "Exchange_charge_single_reason_erp_history",
+  tags: ["hess_single_reason_erp", "hess", "single_reason_erp", "history", "scd2"],
+  description: "HESS — SCD2 история по причинам простоя (single_reason_erp), ключ по ID.",
+  uniqueKey: ["ID", "Valid_from"],
+
+  columns: {
+    ID:              "ID записи",
+    charge_SID:      "Идентификатор замеса / charge",
+    job_number:      "Номер задания (job_number)",
+    reason_SID:      "ID причины простоя",
+    plant_part_SID:  "Участок / часть завода",
+    reason:          "Причина простоя",
+    sz_reason:       "Причина (читаемое описание)",
+    dt_start:        "Дата/время начала простоя",
+    dt_end:          "Дата/время окончания простоя",
+    Valid_from:      "Начало действия версии",
+    Valid_to:        "Конец действия версии",
+    is_current:      "Признак актуальной версии (TRUE — текущая)"
+  }
+} 
+
+${when(incremental(), `
+  
+WITH S_SRC AS (
+  SELECT
+    ID,
+    charge_SID,
+    job_number,
+    reason_SID,
+    plant_part_SID,
+    reason,
+    sz_reason,
+    CAST(dt_start AS DATETIME) AS dt_start,
+    CAST(dt_end   AS DATETIME) AS dt_end
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY ID
+        ORDER BY
+          CAST(dt_start AS DATETIME) DESC NULLS LAST,
+          CAST(dt_end   AS DATETIME) DESC NULLS LAST
+      ) AS rn
+    FROM ${ref("external_staging_hess_single_reason_erp")}
+  )
+  WHERE rn = 1
+),
+ 
+H_CUR AS (
+  SELECT
+    ID,
+    charge_SID,
+    job_number,
+    reason_SID,
+    plant_part_SID,
+    reason,
+    sz_reason,
+    dt_start,
+    dt_end,
+    Valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+ 
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S_SRC s
+  LEFT JOIN H_CUR h USING (ID)
+  WHERE
+    h.ID IS NULL  
+    OR (
+      h.charge_SID     IS DISTINCT FROM s.charge_SID OR
+      h.job_number     IS DISTINCT FROM s.job_number OR
+      h.reason_SID     IS DISTINCT FROM s.reason_SID OR
+      h.plant_part_SID IS DISTINCT FROM s.plant_part_SID OR
+      h.reason         IS DISTINCT FROM s.reason OR
+      h.sz_reason      IS DISTINCT FROM s.sz_reason OR
+      h.dt_start       IS DISTINCT FROM s.dt_start OR
+      h.dt_end         IS DISTINCT FROM s.dt_end
+    )
+),
+ 
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.ID, h.Valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s USING (ID)
+  WHERE h.is_current = TRUE
+)
+ 
+SELECT
+  n.ID,
+  n.charge_SID,
+  n.job_number,
+  n.reason_SID,
+  n.plant_part_SID,
+  n.reason,
+  n.sz_reason,
+  n.dt_start,
+  n.dt_end,
+  CURRENT_DATETIME('Asia/Almaty')        AS Valid_from,
+  CAST(NULL AS DATETIME) AS Valid_to,
+  TRUE         AS is_current
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+SELECT
+  h.ID,
+  h.charge_SID,
+  h.job_number,
+  h.reason_SID,
+  h.plant_part_SID,
+  h.reason,
+  h.sz_reason,
+  h.dt_start,
+  h.dt_end,
+  h.Valid_from,
+  CURRENT_DATETIME('Asia/Almaty')        AS Valid_to,
+  FALSE        AS is_current
+FROM ${self()} h
+JOIN CHANGED_KEYS ck
+  ON h.ID         = ck.ID
+ AND h.Valid_from = ck.Valid_from
+WHERE h.is_current = TRUE
+
+`, `
+ 
+WITH S_SRC AS (
+  SELECT
+    ID,
+    charge_SID,
+    job_number,
+    reason_SID,
+    plant_part_SID,
+    reason,
+    sz_reason,
+    CAST(dt_start AS DATETIME) AS dt_start,
+    CAST(dt_end   AS DATETIME) AS dt_end
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY ID
+        ORDER BY
+          CAST(dt_start AS DATETIME) DESC NULLS LAST,
+          CAST(dt_end   AS DATETIME) DESC NULLS LAST
+      ) AS rn
+    FROM  ${ref("external_staging_hess_single_reason_erp")}
+  )
+  WHERE rn = 1
+)
+
+SELECT
+  ID,
+  charge_SID,
+  job_number,
+  reason_SID,
+  plant_part_SID,
+  reason,
+  sz_reason,
+  dt_start,
+  dt_end,
+  CURRENT_DATETIME('Asia/Almaty')        AS Valid_from,
+  CAST(NULL AS DATETIME) AS Valid_to,
+  TRUE         AS is_current
+FROM S_SRC
+
+`)}
