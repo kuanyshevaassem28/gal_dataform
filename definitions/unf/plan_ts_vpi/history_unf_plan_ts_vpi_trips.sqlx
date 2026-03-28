@@ -1,0 +1,102 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_plan_ts_vpi_trips",
+  tags: ["unf_plan_ts_vpi_trips", "history", "scd2"],
+  description: "UNF — SCD-2 история trips plan_ts_vpi_trips. Surrogate_key = document_id|document_number|buyer_id|vehicle_type.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_plan_ts_vpi_trips`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT CAST(object_id AS STRING)
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Документ.Avers_СуточныйГрафикРаспределенияТСДляВПИ"
+    )
+}
+
+WITH s AS (
+  SELECT
+    document_id,
+    document_number,
+    document_datetime,
+    date,
+    author,
+    CAST(number_of_manipulators_without_trailer AS INT64) AS number_of_manipulators_without_trailer,
+    CAST(number_of_manipulators_with_trailer    AS INT64) AS number_of_manipulators_with_trailer,
+    CAST(number_of_long_cars                    AS INT64) AS number_of_long_cars,
+    CAST(comment AS STRING)                     AS comment,
+    CAST(active AS BOOL)                        AS active,
+
+    TIMESTAMP_SECONDS(DIV(CAST(loaded_at AS INT64), 1000000000)) AS loaded_at,
+
+    buyer_id,
+    buyer_name,
+    buyer_iin_bin,
+
+    vehicle_type,
+    CAST(trips_count AS INT64) AS trips_count,
+
+    TO_HEX(SHA256(
+      COALESCE(document_id, '') || '|' ||
+      COALESCE(document_number, '') || '|' ||
+      COALESCE(buyer_id, '') || '|' ||
+      COALESCE(vehicle_type, '')
+    )) AS surrogate_key
+  FROM ${ref("external_staging_unf_plan_ts_vpi_trips")}
+  WHERE document_id IS NOT NULL
+    AND document_number IS NOT NULL
+    AND buyer_id IS NOT NULL
+    AND vehicle_type IS NOT NULL
+)
+
+SELECT
+  document_id,
+  document_number,
+  document_datetime,
+  date,
+  author,
+  number_of_manipulators_without_trailer,
+  number_of_manipulators_with_trailer,
+  number_of_long_cars,
+  comment,
+  active,
+  loaded_at,
+  buyer_id,
+  buyer_name,
+  buyer_iin_bin,
+  vehicle_type,
+  trips_count,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  surrogate_key
+FROM s
+
+post_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_plan_ts_vpi_trips` h
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE h.is_current = TRUE
+    AND FARM_FINGERPRINT(TO_JSON_STRING(h)) IN (
+      SELECT row_hash
+      FROM (
+        SELECT
+          surrogate_key,
+          FARM_FINGERPRINT(TO_JSON_STRING(t)) AS row_hash,
+          ROW_NUMBER() OVER (
+            PARTITION BY surrogate_key
+            ORDER BY valid_from DESC, FARM_FINGERPRINT(TO_JSON_STRING(t)) DESC
+          ) AS rn
+        FROM `galery-22579.gal_unf.history_unf_plan_ts_vpi_trips` t
+        WHERE t.is_current = TRUE
+      )
+      WHERE rn > 1
+    )
+}
