@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_hess",
+  name: "external_staging_hess_erp"
+}
