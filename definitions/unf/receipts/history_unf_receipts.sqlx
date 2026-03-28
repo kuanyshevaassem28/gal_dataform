@@ -1,0 +1,143 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_receipts",
+  tags: ["unf_receipts", "unf", "receipts", "history"],
+  description: "UNF — история приходов (ПриходнаяНакладная) с is_current и surrogate_key.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    date:                "Дата документа (строка из 1С)",
+    buyer_name:          "Наименование покупателя",
+    seller_name:         "Наименование продавца",
+    nomenclature_name:   "Наименование номенклатуры",
+    variation_name:      "Характеристика номенклатуры",
+    unit_name:           "Единица измерения",
+    category_name:       "Категория номенклатуры",
+    price:               "Цена (FLOAT64)",
+    quantity:            "Количество (FLOAT64)",
+    sum:                 "Сумма (FLOAT64)",
+    seller_id:           "ID продавца",
+    buyer_id:            "ID покупателя",
+    nomenclature_id:     "ID номенклатуры",
+    variation_id:        "ID характеристики",
+    unit_id:             "ID единицы измерения",
+    category_id:         "ID категории номенклатуры",
+    document_id:         "ID документа ПриходнаяНакладная",
+    document_number:     "Номер документа",
+    document_datetime:   "Дата и время документа (строка)",
+    contract_id:         "ID договора",
+    contract_name:       "Наименование договора",
+    intercompany:        "Интеркомпани",
+    active:              "Документ проведен",
+    operation_type:      "Тип операции",
+    currency_id:         "ID валюты",
+    currency_name:       "Наименование валюты",
+    course:              "Курс валюты (FLOAT64)",
+    transport_name:      "Наименование ТС",
+    transport_regnumber: "Регистрационный номер ТС",
+    driver_name:         "ФИО водителя",
+    comment:             "Комментарий",
+    sum_kzt:             "Сумма в KZT (FLOAT64)",
+
+    valid_from:          "Начало действия версии",
+    valid_to:            "Конец действия версии",
+    is_current:          "Признак актуальной версии",
+    surrogate_key:       "Документ + характеристика (имя) + номенклатура (имя)"
+  }
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_receipts`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = 'Документ.ПриходнаяНакладная'
+    );
+}
+
+WITH S AS (
+  SELECT
+    s.date,
+    s.buyer_name,
+    s.seller_name,
+    s.nomenclature_name,
+    s.variation_name,
+    s.unit_name,
+    s.category_name,
+    s.price,
+    s.quantity,
+    s.sum,
+    s.seller_id,
+    s.buyer_id,
+    s.nomenclature_id,
+    s.variation_id,
+    s.unit_id,
+    s.category_id,
+    s.document_id,
+    s.document_number,
+    s.document_datetime,
+    s.contract_id,
+    s.contract_name,
+    s.intercompany,
+    s.active,
+    s.operation_type,
+    s.currency_id,
+    s.currency_name,
+    s.course,
+    s.transport_name,
+    s.transport_regnumber,
+    s.driver_name,
+    s.comment,
+    s.sum_kzt,
+
+    TO_HEX(SHA256(
+      COALESCE(CAST(s.document_id       AS STRING), '') || '|' ||
+      COALESCE(CAST(s.variation_name    AS STRING), '') || '|' ||
+      COALESCE(CAST(s.nomenclature_name AS STRING), '')
+    )) AS surrogate_key
+  FROM ${ref("external_staging_unf_receipts")} AS s
+)
+
+SELECT
+  date,
+  buyer_name,
+  seller_name,
+  nomenclature_name,
+  variation_name,
+  unit_name,
+  category_name,
+  price,
+  quantity,
+  sum,
+  seller_id,
+  buyer_id,
+  nomenclature_id,
+  variation_id,
+  unit_id,
+  category_id,
+  document_id,
+  document_number,
+  document_datetime,
+  contract_id,
+  contract_name,
+  intercompany,
+  active,
+  operation_type,
+  currency_id,
+  currency_name,
+  course,
+  transport_name,
+  transport_regnumber,
+  driver_name,
+  comment,
+  sum_kzt,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  surrogate_key
+FROM S
