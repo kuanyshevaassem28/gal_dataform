@@ -1,0 +1,46 @@
+config {
+  type: "table",
+  schema: "gal_rw",
+  name: "staging_measurement_results_stone_segments",
+  tags: ["rw", "rw_measurement_results_stone_segments", "staging"],
+  description: "Нормализация сегментов камня + BK/SK.",
+  columns: {
+    ui_Measurement_ID:       "Уникальный идентификатор измерения (связь с Measurements",
+    Stone_Index:             "Индекс сегмента камня",
+    r_Average_Stone_max_1:   "Средняя максимальная высота сегмента камня 1 (FLOAT64)",
+    r_Average_Stone_max_2:   "Средняя максимальная высота сегмента камня 2 (FLOAT64)",
+    r_Average_Stone_max_3:   "Средняя максимальная высота сегмента камня 3 (FLOAT64)",
+    bk:                      "Бизнес-ключ (ui_Measurement_ID|'|'|Stone_Index)",
+    surrogate_key:           "SHA256 от BK"
+  }
+}
+
+WITH src AS (
+  SELECT
+    ui_Measurement_ID,
+    Stone_Index,
+    r_Average_Stone_max_1,
+    r_Average_Stone_max_2,
+    r_Average_Stone_max_3
+  FROM ${ref("MeasurementResults_StoneSegments")}
+)
+
+SELECT
+  SAFE_CAST(ui_Measurement_ID AS INT64) AS ui_Measurement_ID,
+  SAFE_CAST(Stone_Index AS INT64)       AS Stone_Index,
+  SAFE_CAST(r_Average_Stone_max_1 AS FLOAT64) AS r_Average_Stone_max_1,
+  SAFE_CAST(r_Average_Stone_max_2 AS FLOAT64) AS r_Average_Stone_max_2,
+  SAFE_CAST(r_Average_Stone_max_3 AS FLOAT64) AS r_Average_Stone_max_3,
+
+  CONCAT(
+    CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING),
+    '|',
+    CAST(SAFE_CAST(Stone_Index AS INT64) AS STRING)
+  ) AS bk,
+
+  TO_HEX(SHA256(CONCAT(
+    CAST(SAFE_CAST(ui_Measurement_ID AS INT64) AS STRING),
+    '|',
+    CAST(SAFE_CAST(Stone_Index AS INT64) AS STRING)
+  ))) AS surrogate_key
+FROM src
