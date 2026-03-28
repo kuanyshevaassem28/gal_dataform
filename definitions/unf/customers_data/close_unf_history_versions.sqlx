@@ -1,0 +1,179 @@
+config {
+  type: "operations",
+  schema: "gal_unf",
+  name: "close_unf_history_versions",
+  tags: ["unf_data_changes", "unf", "data_changes", "scd2", "close_versions"],
+  description: "Закрытие актуальных версий (is_current=false) по данным external_staging_unf_data_changes"
+}
+
+DECLARE current_dt DATETIME DEFAULT CURRENT_DATETIME('Asia/Almaty');
+
+--------------------------------------------------------------------------------
+-- Документ.ЗаказПокупателя
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_orders`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Документ.ЗаказПокупателя"
+);
+
+--------------------------------------------------------------------------------
+-- Документ.РасходнаяНакладная
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_sales`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Документ.РасходнаяНакладная"
+);
+
+--------------------------------------------------------------------------------
+-- Документ.ПриходнаяНакладная
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_receipts`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Документ.ПриходнаяНакладная"
+);
+
+--------------------------------------------------------------------------------
+-- Поступления (счет + касса)
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_receipt_payments`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type IN (
+      "Документ.ПоступлениеНаСчет",
+      "Документ.ПоступлениеВКассу"
+    )
+);
+
+--------------------------------------------------------------------------------
+-- Расходы (счет + касса)
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_outgoing_payments`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type IN (
+      "Документ.РасходСоСчета",
+      "Документ.РасходИзКассы"
+    )
+);
+
+--------------------------------------------------------------------------------
+-- План ТС ВПИ (все связанные таблицы)
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_plan_ts_vpi`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Документ.Avers_СуточныйГрафикРаспределенияТСДляВПИ"
+);
+
+UPDATE `galery-22579.gal_unf.history_unf_plan_ts_vpi_buyers`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Документ.Avers_СуточныйГрафикРаспределенияТСДляВПИ"
+);
+
+UPDATE `galery-22579.gal_unf.history_unf_plan_ts_vpi_trips`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Документ.Avers_СуточныйГрафикРаспределенияТСДляВПИ"
+);
+
+UPDATE `galery-22579.gal_unf.history_unf_plan_ts_vpi_orders`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND document_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Документ.Avers_СуточныйГрафикРаспределенияТСДляВПИ"
+);
+
+--------------------------------------------------------------------------------
+-- Номенклатура
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_nomenclature`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Справочник.Номенклатура"
+);
+
+UPDATE `galery-22579.gal_unf.history_unf_nomenclature_variations`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Справочник.Номенклатура"
+);
+
+UPDATE `galery-22579.gal_unf.history_unf_nomenclature_properties`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Справочник.Номенклатура"
+);
+
+--------------------------------------------------------------------------------
+-- Контрагенты
+--------------------------------------------------------------------------------
+UPDATE `galery-22579.gal_unf.history_unf_customers_data_customer`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND customer_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Справочник.Контрагенты"
+);
+
+UPDATE `galery-22579.gal_unf.history_unf_customers_data_contracts`
+SET is_current = FALSE,
+    valid_to   = current_dt
+WHERE is_current = TRUE
+  AND customer_id IN (
+    SELECT CAST(object_id AS STRING)
+    FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+    WHERE object_type = "Справочник.Контрагенты"
+);
