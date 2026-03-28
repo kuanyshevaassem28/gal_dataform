@@ -1,0 +1,169 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_data_changes",
+  tags: ["unf_data_changes", "unf", "data_changes", "history", "scd2"],
+  description: "UNF — история изменений объектов (data_changes) по surrogate_key = date|object_id|object_type, с SCD2 (is_current / valid_from / valid_to).",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    date:                 "Дата события изменения (из 1С)",
+    event:                "Тип события (создание, изменение, удаление и т.п.)",
+    object_type:          "Тип объекта (Документ.ЗаказПокупателя, Документ.РасходнаяНакладная и т.п.)",
+    object_id:            "Идентификатор объекта в 1С",
+    object_date:          "Дата объекта (дата документа / объекта)",
+    object_presentation:  "Человекочитаемое представление объекта",
+    user:                 "Пользователь, совершивший изменение",
+
+    surrogate_key:        "Суррогатный ключ: date|object_id|object_type",
+    valid_from:           "Начало действия версии записи (SCD2)",
+    valid_to:             "Окончание действия версии записи (SCD2)",
+    is_current:           "Признак актуальной версии записи (TRUE — текущая)"
+  }
+}
+
+${when(incremental(), `
+ 
+WITH S_SRC AS (
+  SELECT
+    date,
+    event,
+    object_type,
+    object_id,
+    object_date,
+    object_presentation,
+    user
+  FROM ${ref("external_staging_unf_data_changes")}
+),
+ 
+S AS (
+  SELECT
+    s.*,
+
+    -- бизнес ключ (идентификация объекта)
+    TO_HEX(SHA256(
+      COALESCE(CAST(date AS STRING), '') || '|' ||
+      COALESCE(object_id, '')           || '|' ||
+      COALESCE(object_type, '')
+    )) AS surrogate_key,
+
+    -- состояние записи (для отслеживания изменений)
+    TO_HEX(SHA256(
+      COALESCE(event, '') || '|' ||
+      COALESCE(CAST(object_date AS STRING), '') || '|' ||
+      COALESCE(object_presentation, '') || '|' ||
+      COALESCE(user, '')
+    )) AS hash_diff
+
+  FROM S_SRC s
+),
+ 
+H_CUR AS (
+  SELECT
+    *,
+    TO_HEX(SHA256(
+      COALESCE(event, '') || '|' ||
+      COALESCE(CAST(object_date AS STRING), '') || '|' ||
+      COALESCE(object_presentation, '') || '|' ||
+      COALESCE(user, '')
+    )) AS hash_diff
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+ 
+DELTA AS (
+  SELECT
+    s.*
+  FROM S s
+  LEFT JOIN H_CUR h
+    ON s.surrogate_key = h.surrogate_key
+  WHERE
+    h.surrogate_key IS NULL              -- новый объект
+    OR s.hash_diff != h.hash_diff        -- изменённый объект
+),
+ 
+TO_CLOSE AS (
+  SELECT
+    h.surrogate_key,
+    h.valid_from
+  FROM H_CUR h
+  JOIN DELTA d
+    ON h.surrogate_key = d.surrogate_key
+)
+ 
+SELECT
+  d.date,
+  d.event,
+  d.object_type,
+  d.object_id,
+  d.object_date,
+  d.object_presentation,
+  d.user,
+  d.surrogate_key,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM DELTA d
+
+UNION ALL
+
+SELECT
+  h.date,
+  h.event,
+  h.object_type,
+  h.object_id,
+  h.object_date,
+  h.object_presentation,
+  h.user,
+  h.surrogate_key,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to
+FROM ${self()} h
+JOIN TO_CLOSE tc
+  ON h.surrogate_key = tc.surrogate_key
+ AND h.valid_from    = tc.valid_from
+WHERE h.is_current = TRUE
+
+`, `
+
+WITH S_SRC AS (
+  SELECT
+    date,
+    event,
+    object_type,
+    object_id,
+    object_date,
+    object_presentation,
+    user
+  FROM ${ref("external_staging_unf_data_changes")}
+),
+
+S AS (
+  SELECT
+    s.*,
+
+    TO_HEX(SHA256(
+      COALESCE(CAST(date AS STRING), '') || '|' ||
+      COALESCE(object_id, '')           || '|' ||
+      COALESCE(object_type, '')
+    )) AS surrogate_key
+
+  FROM S_SRC s
+)
+
+SELECT
+  date,
+  event,
+  object_type,
+  object_id,
+  object_date,
+  object_presentation,
+  user,
+  surrogate_key,
+  TRUE AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S
+
+`)}
