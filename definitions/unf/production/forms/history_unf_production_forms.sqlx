@@ -1,0 +1,104 @@
+config {
+  type: "incremental",
+  schema: "gal_unf",
+  name: "history_unf_production_forms",
+  tags: ["unf_production_forms", "unf", "production", "forms", "history"],
+  description: "UNF — история форм (Документ.СборкаЗапасов) с is_current и surrogate_key.",
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  columns: {
+    document_id:            "ID документа СборкаЗапасов",
+    form_id:                "ID формы",
+    form_name:              "Наименование формы",
+    form_serial:            "Серийный номер формы",
+    number_of_cycles:       "Количество циклов",
+    number_of_reset_cycles: "Количество сброшенных циклов",
+    document_number:        "Номер документа",
+    document_datetime:      "Дата и время документа",
+    document_date:          "Дата документа",
+
+    surrogate_key:          "form_name + document_id",
+    valid_from:             "Начало действия версии",
+    valid_to:               "Конец действия версии",
+    is_current:             "Флаг актуальной версии"
+  }
+}
+
+pre_operations {
+  UPDATE `galery-22579.gal_unf.history_unf_production_forms`
+  SET
+    is_current = FALSE,
+    valid_to   = CURRENT_DATETIME('Asia/Almaty')
+  WHERE is_current = TRUE
+    AND document_id IN (
+      SELECT object_id
+      FROM `galery-22579.gal_unf.external_staging_unf_data_changes`
+      WHERE object_type = "Документ.СборкаЗапасов"
+    );
+}
+
+post_operations {
+  MERGE `galery-22579.gal_unf.history_unf_production_forms` AS t
+  USING (
+    SELECT DISTINCT surrogate_key, valid_from, document_id
+    FROM (
+      SELECT
+        surrogate_key,
+        valid_from,
+        document_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY surrogate_key
+          ORDER BY valid_from DESC, document_id DESC NULLS LAST
+        ) AS rn
+      FROM `galery-22579.gal_unf.history_unf_production_forms`
+      WHERE is_current = TRUE
+    )
+    WHERE rn > 1
+  ) d
+  ON  t.is_current    = TRUE
+  AND t.surrogate_key = d.surrogate_key
+  AND t.valid_from    = d.valid_from
+  AND (t.document_id IS NOT DISTINCT FROM d.document_id)
+  WHEN MATCHED THEN
+    UPDATE SET
+      t.is_current = FALSE,
+      t.valid_to   = CURRENT_DATETIME('Asia/Almaty');
+}
+
+WITH S AS (
+  SELECT
+    s.document_id,
+    s.form_id,
+    s.form_name,
+    s.form_serial,
+    s.number_of_cycles,
+    s.number_of_reset_cycles,
+    s.document_number,
+    s.document_datetime,
+    s.document_date,
+    TO_HEX(
+      SHA256(
+        CONCAT(
+          COALESCE(s.form_name, ''), '|',
+          COALESCE(s.document_id, '')
+        )
+      )
+    ) AS surrogate_key
+  FROM ${ref("staging_unf_production_forms")} AS s
+)
+
+SELECT
+  document_id,
+  form_id,
+  form_name,
+  form_serial,
+  number_of_cycles,
+  number_of_reset_cycles,
+  document_number,
+  document_datetime,
+  document_date,
+  surrogate_key,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current
+FROM S
