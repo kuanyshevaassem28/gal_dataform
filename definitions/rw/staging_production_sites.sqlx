@@ -1,0 +1,20 @@
+config {
+  type: "table",
+  schema: "gal_rw",
+  name: "staging_production_sites",
+  tags: ["rw", "rw_production_sites", "staging"],
+  description: "RW Production Sites: нормализованный справочник производственных участков.",
+  columns: {
+    Site_ID:   "Уникальный идентификатор производственного участка",
+    Site_Name: "Название производственного участка"
+  }
+}
+
+SELECT
+  i_Site_ID AS Site_ID,
+  CASE
+    WHEN Site_Name = 'Line 1' THEN 'ПП3 Линия вибропрессования 1'
+    WHEN Site_Name = 'Line 2' THEN 'ПП2 Линия вибропрессования'
+    ELSE Site_Name
+  END AS Site_Name
+FROM ${ref("ProductionSites")}
