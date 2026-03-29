@@ -40,6 +40,11 @@ config {
     comment:             "Комментарий",
     sum_kzt:             "Сумма в KZT (FLOAT64)",
 
+    stock_id:            "ID склада (STRING)",
+    stock_name:          "Наименование склада",
+    cell_id:             "ID ячейки",
+    cell_name:           "Наименование ячейки",
+
     valid_from:          "Начало действия версии",
     valid_to:            "Конец действия версии",
     is_current:          "Признак актуальной версии",
@@ -94,6 +99,10 @@ WITH S AS (
     s.driver_name,
     s.comment,
     s.sum_kzt,
+    s.stock_id,
+    s.stock_name,
+    s.cell_id,
+    s.cell_name,
 
     TO_HEX(SHA256(
       COALESCE(CAST(s.document_id       AS STRING), '') || '|' ||
@@ -136,6 +145,10 @@ SELECT
   driver_name,
   comment,
   sum_kzt,
+  stock_id,
+  stock_name,
+  cell_id,
+  cell_name,
   CURRENT_DATETIME('Asia/Almaty') AS valid_from,
   CAST(NULL AS DATETIME)          AS valid_to,
   TRUE                            AS is_current,
