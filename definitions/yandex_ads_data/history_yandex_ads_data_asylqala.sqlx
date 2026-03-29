@@ -61,7 +61,7 @@ USING (
       Clicks,
       Cost,
       surrogate_key
-    FROM ${ref("staging__asylqala")}
+    FROM ${ref("staging_yandex_ads_data_asylqala")}
   ),
 
   h_cur AS (
