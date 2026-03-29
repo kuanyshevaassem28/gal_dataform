@@ -1,132 +1,48 @@
 config {
-  type: "operations",
+  type: "incremental",
   schema: "gal_unf",
   name: "history_unf_stock",
-  tags: ["unf_stock", "scd2"]
+  tags: ["unf_stock", "scd2"],
+
+  uniqueKey: ["surrogate_key", "valid_from"],
+
+  description: "UNF — SCD-2 история остатков по складам",
+
+  columns: {
+    owner_name:         "Владелец склада / юр. лицо",
+    stock_name:         "Название склада",
+    nomenclature_name:  "Название номенклатуры",
+    variation_name:     "Вариант номенклатуры",
+    unit_name:          "Единица измерения",
+    category_name:      "Категория номенклатуры",
+
+    quantity:           "Общее количество товара",
+    quantity_reserved:  "Зарезервированное количество",
+    quantity_free:      "Свободный остаток",
+
+    owner_id:           "ID владельца",
+    stock_id:           "ID склада",
+    nomenclature_id:    "ID номенклатуры",
+    variation_id:       "ID варианта",
+    unit_id:            "ID единицы измерения",
+    category_id:        "ID категории",
+
+    date:               "Дата состояния остатка",
+
+    valid_from:         "Начало действия версии записи (SCD2)",
+    valid_to:           "Конец действия версии записи (SCD2)",
+    is_current:         "Флаг текущей записи",
+    surrogate_key:      "Surrogate key"
+  }
 }
 
-MERGE `${self().database}.${self().schema}.history_unf_stock` AS t
-USING (
+${when(incremental(), `
 
-  WITH s AS (
-    SELECT
-      owner_name,
-      stock_name,
-      nomenclature_name,
-      variation_name,
-      unit_name,
-      category_name,
-
-      quantity,
-      quantity_reserved,
-      quantity_free,
-
-      owner_id,
-      stock_id,
-      nomenclature_id,
-      variation_id,
-      unit_id,
-      category_id,
-
-      date,
-
-      TO_HEX(SHA256(
-        COALESCE(owner_id, '') || '|' ||
-        COALESCE(stock_id, '') || '|' ||
-        COALESCE(nomenclature_id, '') || '|' ||
-        COALESCE(variation_id, '') || '|' ||
-        COALESCE(unit_id, '')
-      )) AS surrogate_key
-
-    FROM ${ref("external_staging_unf_stock")}
-  ),
-
-  -- дедуп
-  s_dedup AS (
-    SELECT * EXCEPT(rn)
-    FROM (
-      SELECT
-        s.*,
-        ROW_NUMBER() OVER (
-          PARTITION BY surrogate_key
-          ORDER BY date DESC
-        ) AS rn
-      FROM s
-    )
-    WHERE rn = 1
-  ),
-
-  -- текущие записи
-  h_cur AS (
-    SELECT *
-    FROM `${self().database}.${self().schema}.history_unf_stock`
-    WHERE is_current = TRUE
-  ),
-
-  -- diff
-  diff AS (
-    SELECT
-      s_dedup.*,
-      h_cur.valid_from AS h_valid_from,
-
-      h_cur.surrogate_key IS NULL AS is_new,
-
-      (
-        h_cur.surrogate_key IS NOT NULL AND (
-             COALESCE(s_dedup.quantity, 0)           != COALESCE(h_cur.quantity, 0)
-          OR COALESCE(s_dedup.quantity_reserved, 0) != COALESCE(h_cur.quantity_reserved, 0)
-          OR COALESCE(s_dedup.quantity_free, 0)     != COALESCE(h_cur.quantity_free, 0)
-          OR s_dedup.date != h_cur.date
-        )
-      ) AS is_changed
-
-    FROM s_dedup
-    LEFT JOIN h_cur
-      ON h_cur.surrogate_key = s_dedup.surrogate_key
-  ),
-
-  -- U + I
-  rows_to_merge AS (
-
-    -- 🔴 закрытие
-    SELECT
-      d.*,
-      d.h_valid_from AS valid_from,
-      CURRENT_TIMESTAMP() AS valid_to,
-      FALSE AS is_current,
-      'U' AS op
-    FROM diff d
-    WHERE d.is_changed = TRUE
-
-    UNION ALL
-
-    -- 🟢 вставка
-    SELECT
-      d.*,
-      CURRENT_TIMESTAMP() AS valid_from,
-      CAST(NULL AS TIMESTAMP) AS valid_to,
-      TRUE AS is_current,
-      'I' AS op
-    FROM diff d
-    WHERE d.is_new = TRUE OR d.is_changed = TRUE
-  )
-
-  SELECT * FROM rows_to_merge
-
-) AS s
-
-ON t.surrogate_key = s.surrogate_key
-AND t.valid_from   = s.valid_from
-
--- UPDATE
-WHEN MATCHED AND s.op = 'U' THEN
-  UPDATE SET
-    is_current = FALSE,
-    valid_to   = s.valid_to
-
--- INSERT
-WHEN NOT MATCHED AND s.op = 'I' THEN
-  INSERT (
+-- =========================
+-- SOURCE
+-- =========================
+WITH s AS (
+  SELECT
     owner_name,
     stock_name,
     nomenclature_name,
@@ -134,9 +50,9 @@ WHEN NOT MATCHED AND s.op = 'I' THEN
     unit_name,
     category_name,
 
-    quantity,
-    quantity_reserved,
-    quantity_free,
+    SAFE_CAST(quantity           AS FLOAT64) AS quantity,
+    SAFE_CAST(quantity_reserved  AS FLOAT64) AS quantity_reserved,
+    SAFE_CAST(quantity_free      AS FLOAT64) AS quantity_free,
 
     owner_id,
     stock_id,
@@ -146,33 +62,140 @@ WHEN NOT MATCHED AND s.op = 'I' THEN
     category_id,
 
     date,
-    valid_from,
-    valid_to,
-    is_current,
-    surrogate_key
+
+    TO_HEX(SHA256(
+      COALESCE(CAST(owner_id AS STRING), '') || '|' ||
+      COALESCE(CAST(stock_id AS STRING), '') || '|' ||
+      COALESCE(CAST(nomenclature_id AS STRING), '') || '|' ||
+      COALESCE(CAST(variation_id AS STRING), '') || '|' ||
+      COALESCE(CAST(unit_id AS STRING), '')
+    )) AS surrogate_key
+
+  FROM ${ref("external_staging_unf_stock")}
+),
+
+-- =========================
+-- DEDUP
+-- =========================
+s_dedup AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      s.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY surrogate_key
+        ORDER BY date DESC
+      ) rn
+    FROM s
   )
-  VALUES (
-    s.owner_name,
-    s.stock_name,
-    s.nomenclature_name,
-    s.variation_name,
-    s.unit_name,
-    s.category_name,
+  WHERE rn = 1
+),
 
-    s.quantity,
-    s.quantity_reserved,
-    s.quantity_free,
+-- =========================
+-- CURRENT HISTORY
+-- =========================
+h_cur AS (
+  SELECT *
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
 
-    s.owner_id,
-    s.stock_id,
-    s.nomenclature_id,
-    s.variation_id,
-    s.unit_id,
-    s.category_id,
+-- =========================
+-- DIFF
+-- =========================
+diff AS (
+  SELECT
+    s.*,
+    h.valid_from AS h_valid_from,
 
-    s.date,
-    s.valid_from,
-    s.valid_to,
-    s.is_current,
-    s.surrogate_key
-  );
+    h.surrogate_key IS NULL AS is_new,
+
+    (
+      h.surrogate_key IS NOT NULL AND (
+           COALESCE(s.quantity, 0)           != COALESCE(h.quantity, 0)
+        OR COALESCE(s.quantity_reserved, 0) != COALESCE(h.quantity_reserved, 0)
+        OR COALESCE(s.quantity_free, 0)     != COALESCE(h.quantity_free, 0)
+        OR s.date != h.date
+      )
+    ) AS is_changed
+
+  FROM s_dedup s
+  LEFT JOIN h_cur h
+    ON s.surrogate_key = h.surrogate_key
+),
+
+-- =========================
+-- INSERT NEW
+-- =========================
+to_insert AS (
+  SELECT
+    d.*,
+    CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+    CAST(NULL AS DATETIME)          AS valid_to,
+    TRUE                            AS is_current
+  FROM diff d
+  WHERE d.is_new = TRUE OR d.is_changed = TRUE
+),
+
+to_close AS (
+  SELECT
+    h.* EXCEPT(valid_to, is_current),
+    h.valid_from,
+    CURRENT_DATETIME('Asia/Almaty') AS valid_to,
+    FALSE                           AS is_current
+  FROM ${self()} h
+  JOIN diff d
+    ON h.surrogate_key = d.surrogate_key
+  WHERE h.is_current = TRUE
+    AND d.is_changed = TRUE
+)
+
+SELECT * FROM to_insert
+
+UNION ALL
+
+SELECT * FROM to_close
+
+`, `
+
+WITH s AS (
+  SELECT
+    owner_name,
+    stock_name,
+    nomenclature_name,
+    variation_name,
+    unit_name,
+    category_name,
+
+    SAFE_CAST(quantity           AS FLOAT64) AS quantity,
+    SAFE_CAST(quantity_reserved  AS FLOAT64) AS quantity_reserved,
+    SAFE_CAST(quantity_free      AS FLOAT64) AS quantity_free,
+
+    owner_id,
+    stock_id,
+    nomenclature_id,
+    variation_id,
+    unit_id,
+    category_id,
+
+    date,
+
+    TO_HEX(SHA256(
+      COALESCE(CAST(owner_id AS STRING), '') || '|' ||
+      COALESCE(CAST(stock_id AS STRING), '') || '|' ||
+      COALESCE(CAST(nomenclature_id AS STRING), '') || '|' ||
+      COALESCE(CAST(variation_id AS STRING), '') || '|' ||
+      COALESCE(CAST(unit_id AS STRING), '')
+    )) AS surrogate_key
+
+  FROM ${ref("external_staging_unf_stock")}
+)
+
+SELECT
+  s.*,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current
+FROM s
+
+`)}
