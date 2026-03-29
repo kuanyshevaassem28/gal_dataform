@@ -1,0 +1,313 @@
+config {
+  type: "incremental",
+  schema: "gal_qaver",
+  name: "history_qaver_pp3_products",
+  tags: ["qaver_pp3_products", "qaver", "pp3", "products", "history", "scd2"],
+  description: "SCD-2 история Qaver PP3 Products по surrogate_key = SHA256(ProduktID) с is_current / valid_from / valid_to.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+}
+ 
+${when(incremental(), `
+ 
+WITH
+S_SRC AS (
+  SELECT *
+  FROM ${ref("external_staging_qaver_pp3_products")}
+),
+
+S AS (
+  SELECT
+ 
+    s.Pfad          AS Path,
+    s.KN            AS IdKN,
+    s.PName         AS ProductName,
+    s.Artikelnummer AS ProductNumber,
+    CAST(s.FormName AS STRING) AS FormName,
+    s.Sauger        AS SuctionType,
+    s.Volumen       AS Volume,
+    s.\`Fl_che\`    AS Area,
+    s.\`H_he\`      AS Height,
+
+    s.A_VV_1        AS LimitHandVacuum1,
+    s.A_VV_2        AS LimitHandVacuum2,
+    s.A_VV_3        AS LimitHandVacuum3,
+    s.A_VV_4        AS LimitHandVacuum4,
+
+    s.A_H_1         AS LimitHeight1,
+    s.A_H_2         AS LimitHeight2,
+    s.A_H_3         AS LimitHeight3,
+    s.A_H_4         AS LimitHeight4,
+
+    s.A_VK_1        AS CoreCompressionLimits1,
+    s.A_VK_2        AS CoreCompressionLimits2,
+    s.A_VK_3        AS CoreCompressionLimits3,
+    s.A_VK_4        AS CoreCompressionLimits4,
+
+    s.A_D_1         AS LimitDensity1,
+    s.A_D_2         AS LimitDensity2,
+    s.A_D_3         AS LimitDensity3,
+    s.A_D_4         AS LimitDensity4,
+
+    s.A_G_1         AS LimitWeight1,
+    s.A_G_2         AS LimitWeight2,
+    s.A_G_3         AS LimitWeight3,
+    s.A_G_4         AS LimitWeight4,
+
+    s.Messablauf            AS MeasurementProcess,
+    s.XB                    AS StandardFormatX,
+    s.YB                    AS StandardFormatY,
+
+    s.TransponderStatus     AS TransponderStatus,
+    s.VorsatzVakuumStatus   AS HandVacuumMode,
+    s.TischVakuumStatus     AS TableVacuumMode,
+    s.HoeheStatus           AS HeightVakuumStatus,
+    s.GewichtStatus         AS WeightVakuumStatus,
+    s.DichteStatus          AS DensityVakuumStatus,
+
+    s.XG                    AS LargeFormatX,
+    s.YG                    AS LargeFormatY,
+
+    s.TransponderStatusGR   AS TransponderStatusGR,
+    s.VorsatzVakuumStatusGR AS HandVacuumModeGR,
+    s.TischVakuumStatusGR   AS TableVacuumModeGR,
+    s.HoeheStatusGR         AS HeightVakuumStatusGR,
+    s.GewichtStatusGR       AS WeightVakuumStatusGR,
+    s.DichteStatusGR        AS DensityVakuumStatusGR,
+
+    s.StandardStatus        AS StandardStatus,
+    s.SonderformatStatus    AS SpecialFormatStatus,
+    s.ProduktID             AS ProductID,
+ 
+    TO_HEX(
+      SHA256(
+        CAST(COALESCE(CAST(s.ProduktID AS STRING), '') AS STRING)
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+),
+
+H_CUR AS (
+  SELECT surrogate_key, valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL 
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s USING (surrogate_key)
+  WHERE h.is_current = TRUE
+)
+ 
+SELECT
+  n.Path,
+  n.IdKN,
+  n.ProductName,
+  n.ProductNumber,
+  n.FormName,
+  n.SuctionType,
+  n.Volume,
+  n.Area,
+  n.Height,
+  n.LimitHandVacuum1,
+  n.LimitHandVacuum2,
+  n.LimitHandVacuum3,
+  n.LimitHandVacuum4,
+  n.LimitHeight1,
+  n.LimitHeight2,
+  n.LimitHeight3,
+  n.LimitHeight4,
+  n.CoreCompressionLimits1,
+  n.CoreCompressionLimits2,
+  n.CoreCompressionLimits3,
+  n.CoreCompressionLimits4,
+  n.LimitDensity1,
+  n.LimitDensity2,
+  n.LimitDensity3,
+  n.LimitDensity4,
+  n.LimitWeight1,
+  n.LimitWeight2,
+  n.LimitWeight3,
+  n.LimitWeight4,
+  n.MeasurementProcess,
+  n.StandardFormatX,
+  n.StandardFormatY,
+  n.TransponderStatus,
+  n.HandVacuumMode,
+  n.TableVacuumMode,
+  n.HeightVakuumStatus,
+  n.WeightVakuumStatus,
+  n.DensityVakuumStatus,
+  n.LargeFormatX,
+  n.LargeFormatY,
+  n.TransponderStatusGR,
+  n.HandVacuumModeGR,
+  n.TableVacuumModeGR,
+  n.HeightVakuumStatusGR,
+  n.WeightVakuumStatusGR,
+  n.DensityVakuumStatusGR,
+  n.StandardStatus,
+  n.SpecialFormatStatus,
+  n.ProductID,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to,
+  n.surrogate_key
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+SELECT
+  h.Path,
+  h.IdKN,
+  h.ProductName,
+  h.ProductNumber,
+  h.FormName,
+  h.SuctionType,
+  h.Volume,
+  h.Area,
+  h.Height,
+  h.LimitHandVacuum1,
+  h.LimitHandVacuum2,
+  h.LimitHandVacuum3,
+  h.LimitHandVacuum4,
+  h.LimitHeight1,
+  h.LimitHeight2,
+  h.LimitHeight3,
+  h.LimitHeight4,
+  h.CoreCompressionLimits1,
+  h.CoreCompressionLimits2,
+  h.CoreCompressionLimits3,
+  h.CoreCompressionLimits4,
+  h.LimitDensity1,
+  h.LimitDensity2,
+  h.LimitDensity3,
+  h.LimitDensity4,
+  h.LimitWeight1,
+  h.LimitWeight2,
+  h.LimitWeight3,
+  h.LimitWeight4,
+  h.MeasurementProcess,
+  h.StandardFormatX,
+  h.StandardFormatY,
+  h.TransponderStatus,
+  h.HandVacuumMode,
+  h.TableVacuumMode,
+  h.HeightVakuumStatus,
+  h.WeightVakuumStatus,
+  h.DensityVakuumStatus,
+  h.LargeFormatX,
+  h.LargeFormatY,
+  h.TransponderStatusGR,
+  h.HandVacuumModeGR,
+  h.TableVacuumModeGR,
+  h.HeightVakuumStatusGR,
+  h.WeightVakuumStatusGR,
+  h.DensityVakuumStatusGR,
+  h.StandardStatus,
+  h.SpecialFormatStatus,
+  h.ProductID,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_to,
+  h.surrogate_key
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON h.surrogate_key = k.surrogate_key
+ AND h.valid_from    = k.valid_from
+WHERE h.is_current = TRUE
+
+
+`, `
+ 
+WITH
+S_SRC AS (
+  SELECT *
+  FROM ${ref("external_staging_qaver_pp3_products")}
+),
+
+S AS (
+  SELECT
+    s.Pfad          AS Path,
+    s.KN            AS IdKN,
+    s.PName         AS ProductName,
+    s.Artikelnummer AS ProductNumber,
+    CAST(s.FormName AS STRING) AS FormName,
+    s.Sauger        AS SuctionType,
+    s.Volumen       AS Volume,
+    s.\`Fl_che\`    AS Area,
+    s.\`H_he\`      AS Height,
+
+    s.A_VV_1        AS LimitHandVacuum1,
+    s.A_VV_2        AS LimitHandVacuum2,
+    s.A_VV_3        AS LimitHandVacuum3,
+    s.A_VV_4        AS LimitHandVacuum4,
+
+    s.A_H_1         AS LimitHeight1,
+    s.A_H_2         AS LimitHeight2,
+    s.A_H_3         AS LimitHeight3,
+    s.A_H_4         AS LimitHeight4,
+
+    s.A_VK_1        AS CoreCompressionLimits1,
+    s.A_VK_2        AS CoreCompressionLimits2,
+    s.A_VK_3        AS CoreCompressionLimits3,
+    s.A_VK_4        AS CoreCompressionLimits4,
+
+    s.A_D_1         AS LimitDensity1,
+    s.A_D_2         AS LimitDensity2,
+    s.A_D_3         AS LimitDensity3,
+    s.A_D_4         AS LimitDensity4,
+
+    s.A_G_1         AS LimitWeight1,
+    s.A_G_2         AS LimitWeight2,
+    s.A_G_3         AS LimitWeight3,
+    s.A_G_4         AS LimitWeight4,
+
+    s.Messablauf            AS MeasurementProcess,
+    s.XB                    AS StandardFormatX,
+    s.YB                    AS StandardFormatY,
+
+    s.TransponderStatus     AS TransponderStatus,
+    s.VorsatzVakuumStatus   AS HandVacuumMode,
+    s.TischVakuumStatus     AS TableVacuumMode,
+    s.HoeheStatus           AS HeightVakuumStatus,
+    s.GewichtStatus         AS WeightVakuumStatus,
+    s.DichteStatus          AS DensityVakuumStatus,
+
+    s.XG                    AS LargeFormatX,
+    s.YG                    AS LargeFormatY,
+
+    s.TransponderStatusGR   AS TransponderStatusGR,
+    s.VorsatzVakuumStatusGR AS HandVacuumModeGR,
+    s.TischVakuumStatusGR   AS TableVacuumModeGR,
+    s.HoeheStatusGR         AS HeightVakuumStatusGR,
+    s.GewichtStatusGR       AS WeightVakuumStatusGR,
+    s.DichteStatusGR        AS DensityVakuumStatusGR,
+
+    s.StandardStatus        AS StandardStatus,
+    s.SonderformatStatus    AS SpecialFormatStatus,
+    s.ProduktID             AS ProductID,
+
+    TO_HEX(
+      SHA256(
+        CAST(COALESCE(CAST(s.ProduktID AS STRING), '') AS STRING)
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+)
+
+SELECT
+  s.*,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S s
+
+`)}
