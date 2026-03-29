@@ -1,63 +1,133 @@
 config {
-  type: "table",
-  schema: "facebook_ads_data",               
-  tags: ["facebook_ads", "staging"],
-  description: "Facebook Ads: нормализация типов, surrogate_key по BK, дедуп по SK."
+  type: "incremental",
+  schema: "facebook_ads_data",         
+  name: "history_facebook_ads_data",
+  tags: ["facebook_ads", "history", "scd2"],
+  description: "Facebook Ads — SCD-2 история по surrogate_key (BK) с is_current/valid_from/valid_to.",
+  uniqueKey: ["surrogate_key", "valid_from"]
 }
 
-WITH src AS (
-  SELECT
-    account_name,
-    campaign_name,
-    SAFE_CAST(campaign_id AS INT64)           AS campaign_id,
-    adset_name,
-    SAFE_CAST(adset_id AS INT64)              AS adset_id,
-    ad_name,
-    PARSE_DATE('%Y-%m-%d', date_start)        AS date_start,
-    PARSE_DATE('%Y-%m-%d', date_stop)         AS date_stop,
-    SAFE_CAST(impressions AS INT64)           AS impressions,
-    SAFE_CAST(reach AS INT64)                 AS reach,
-    SAFE_CAST(frequency AS FLOAT64)           AS frequency,
-    SAFE_CAST(spend AS FLOAT64)               AS spend,
-    SAFE_CAST(clicks AS INT64)                AS clicks,
-    SAFE_CAST(ctr AS FLOAT64)                 AS ctr,
-    account_id,
-    publisher_platform,
-    platform_position,
-    SAFE_CAST(cpc AS FLOAT64)                 AS cpc
-  FROM ${ref("external_staging_facebook_ads_data")} 
-),
-
-enriched AS (
-  SELECT
-    s.*,
+${when(incremental(), `
  
-    TO_HEX(SHA256(
-      COALESCE(s.account_name, '') || '|' ||
-      COALESCE(s.campaign_name, '') || '|' ||
-      COALESCE(CAST(s.campaign_id AS STRING), '') || '|' ||
-      COALESCE(s.adset_name, '') || '|' ||
-      COALESCE(s.ad_name, '') || '|' ||
-      COALESCE(CAST(s.adset_id AS STRING), '') || '|' ||
-      COALESCE(CAST(s.date_start AS STRING), '') || '|' ||
-      COALESCE(CAST(s.date_stop  AS STRING), '') || '|' ||
-      COALESCE(s.account_id, '') || '|' ||
-      COALESCE(s.publisher_platform, '') || '|' ||
-      COALESCE(s.platform_position, '')
-    )) AS surrogate_key
-  FROM src s
+WITH
+S AS (
+  SELECT *
+  FROM ${ref("staging_facebook_ads_data")}
 ),
 
-dedup AS (
-  SELECT
-    e.*,
-    ROW_NUMBER() OVER (
-      PARTITION BY e.surrogate_key
-      ORDER BY e.date_start DESC NULLS LAST, e.spend DESC NULLS LAST, e.impressions DESC NULLS LAST
-    ) AS rn
-  FROM enriched e
+H_CUR AS (
+  SELECT surrogate_key, valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN S s USING (surrogate_key)
+  WHERE h.is_current = TRUE
 )
 
-SELECT * EXCEPT(rn)
-FROM dedup
-WHERE rn = 1
+SELECT
+  n.account_name,
+  n.campaign_name,
+  n.campaign_id,
+  n.adset_name,
+  n.adset_id,
+  n.ad_name,
+  n.date_start,
+  n.date_stop,
+  n.impressions,
+  n.reach,
+  n.frequency,
+  n.spend,
+  n.clicks,
+  n.ctr,
+  n.account_id,
+  n.publisher_platform,
+  n.platform_position,
+  n.cpc,
+  n.surrogate_key,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+SELECT
+  h.account_name,
+  h.campaign_name,
+  h.campaign_id,
+  h.adset_name,
+  h.adset_id,
+  h.ad_name,
+  h.date_start,
+  h.date_stop,
+  h.impressions,
+  h.reach,
+  h.frequency,
+  h.spend,
+  h.clicks,
+  h.ctr,
+  h.account_id,
+  h.publisher_platform,
+  h.platform_position,
+  h.cpc,
+  h.surrogate_key,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_to
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON k.surrogate_key = h.surrogate_key
+ AND k.valid_from    = h.valid_from
+WHERE h.is_current = TRUE
+
+`, `
+
+WITH S AS (
+  SELECT *
+  FROM ${ref("staging_facebook_ads_data")}
+),
+DEDUP AS (
+  SELECT s.*
+  FROM S s
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY surrogate_key
+    ORDER BY date_start DESC NULLS LAST, spend DESC NULLS LAST, impressions DESC NULLS LAST
+  ) = 1
+)
+
+SELECT
+  d.account_name,
+  d.campaign_name,
+  d.campaign_id,
+  d.adset_name,
+  d.adset_id,
+  d.ad_name,
+  d.date_start,
+  d.date_stop,
+  d.impressions,
+  d.reach,
+  d.frequency,
+  d.spend,
+  d.clicks,
+  d.ctr,
+  d.account_id,
+  d.publisher_platform,
+  d.platform_position,
+  d.cpc,
+  d.surrogate_key,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM DEDUP d
+`)}
