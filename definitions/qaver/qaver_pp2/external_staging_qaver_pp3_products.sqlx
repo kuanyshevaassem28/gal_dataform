@@ -1,5 +1,0 @@
-config {
-  type: "declaration",
-  schema: "gal_qaver",
-  name: "external_staging_qaver_pp3_products"
-}
