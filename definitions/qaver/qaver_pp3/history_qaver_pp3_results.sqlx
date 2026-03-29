@@ -1,0 +1,351 @@
+config {
+  type: "incremental",
+  schema: "gal_qaver",
+  name: "history_qaver_pp3_results",
+  tags: ["qaver_pp3_results", "qaver", "pp3", "results", "history", "scd2"],
+  description: "SCD-2 история Qaver PP3 Results по surrogate_key = SHA256(ErgebnisseID) с is_current / valid_from / valid_to.",
+  uniqueKey: ["surrogate_key", "valid_from"]
+} 
+
+${when(incremental(), `
+
+WITH S_SRC AS (
+  SELECT *
+  FROM ${ref("external_staging_qaver_pp3_results")}
+),
+
+S AS (
+  SELECT
+    s.LokalDateTime        AS LocalDateTime,
+    s.UTCTimeSpan          AS UTCTimeSpan,
+    s.Transponder          AS Transponder,
+    s.Benutzer_Name        AS UserName,
+    s.Benutzer_Standort    AS UserLocation,
+    s.Pfad                 AS Path,
+    s.KN                   AS IdKN,
+    s.PName                AS ProductName,
+    s.Artikelnummer        AS ProductNumber,
+    s.BoardName            AS BoardName,
+    s.Sauger               AS SuctionType,
+    s.Kalibrierh_he_1      AS CalibrationHeight1,
+    s.Kalibrierh_he_2      AS CalibrationHeight2,
+    s.Kalibriergewicht     AS CalibrationWeight,
+    s.Volumen              AS Volume,
+    s.\`Fl_che\`           AS Area,
+    s.\`H_he\`             AS Height,
+
+    s.A_VV_1               AS LimitHandVacuum1,
+    s.A_VV_2               AS LimitHandVacuum2,
+    s.A_VV_3               AS LimitHandVacuum3,
+    s.A_VV_4               AS LimitHandVacuum4,
+    s.A_H_1                AS LimitHeight1,
+    s.A_H_2                AS LimitHeight2,
+    s.A_H_3                AS LimitHeight3,
+    s.A_H_4                AS LimitHeight4,
+    s.A_VK_1               AS CoreCompressionLimits1,
+    s.A_VK_2               AS CoreCompressionLimits2,
+    s.A_VK_3               AS CoreCompressionLimits3,
+    s.A_VK_4               AS CoreCompressionLimits4,
+    s.A_D_1                AS LimitDensity1,
+    s.A_D_2                AS LimitDensity2,
+    s.A_D_3                AS LimitDensity3,
+    s.A_D_4                AS LimitDensity4,
+    s.A_G_1                AS LimitWeight1,
+    s.A_G_2                AS LimitWeight2,
+    s.A_G_3                AS LimitWeight3,
+    s.A_G_4                AS LimitWeight4,
+
+    s.ShowVerdichtungVorsatz AS ShowHandMeasurement,
+    s.ShowVerdichtungKern    AS ShowTableMeasurement,
+    s.ShowHoehe              AS ShowHeight,
+    s.ShowGewicht            AS ShowWeight,
+    s.ShowRohdichte          AS ShowDensity,
+
+    s.ProduktID            AS ProductID,
+    s.Frisch_VV            AS FreshVV,
+    s.Frisch_H             AS FreshH,
+    s.Frisch_VK            AS FreshVK,
+    s.Frisch_G             AS FreshG,
+    s.Frisch_D             AS FreshD,
+
+    s.Ergebnis             AS Result,
+    s.Kommentar            AS Comment,
+    s._bertragen           AS Transferred,
+    s._ID                  AS UID,
+    s.__Best_tigt          AS Confirmed,
+    s.Messung              AS Measurement,
+    s.BoardID              AS BoardID,
+    s.POS                  AS Pos,
+    s.Abbruch              AS Aborted,
+    s.SizeX                AS SizeX,
+    s.SizeY                AS SizeY,
+    s.PosX                 AS PosX,
+    s.PosY                 AS PosY,
+    s.ErgebnisseID         AS ResultsID,
+
+    TO_HEX(
+      SHA256(
+        CAST(COALESCE(CAST(s.ErgebnisseID AS STRING), '') AS STRING)
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+),
+
+H_CUR AS (
+  SELECT surrogate_key, valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S s
+  LEFT JOIN H_CUR h USING (surrogate_key)
+  WHERE h.surrogate_key IS NULL 
+),
+
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.surrogate_key, h.valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s USING (surrogate_key)
+  WHERE h.is_current = TRUE
+)
+ 
+SELECT
+  n.LocalDateTime,
+  n.UTCTimeSpan,
+  n.Transponder,
+  n.UserName,
+  n.UserLocation,
+  n.Path,
+  n.IdKN,
+  n.ProductName,
+  n.ProductNumber,
+  n.BoardName,
+  n.SuctionType,
+  n.CalibrationHeight1,
+  n.CalibrationHeight2,
+  n.CalibrationWeight,
+  n.Volume,
+  n.Area,
+  n.Height,
+  n.LimitHandVacuum1,
+  n.LimitHandVacuum2,
+  n.LimitHandVacuum3,
+  n.LimitHandVacuum4,
+  n.LimitHeight1,
+  n.LimitHeight2,
+  n.LimitHeight3,
+  n.LimitHeight4,
+  n.CoreCompressionLimits1,
+  n.CoreCompressionLimits2,
+  n.CoreCompressionLimits3,
+  n.CoreCompressionLimits4,
+  n.LimitDensity1,
+  n.LimitDensity2,
+  n.LimitDensity3,
+  n.LimitDensity4,
+  n.LimitWeight1,
+  n.LimitWeight2,
+  n.LimitWeight3,
+  n.LimitWeight4,
+  n.ShowHandMeasurement,
+  n.ShowTableMeasurement,
+  n.ShowHeight,
+  n.ShowWeight,
+  n.ShowDensity,
+  n.ProductID,
+  n.FreshVV,
+  n.FreshH,
+  n.FreshVK,
+  n.FreshG,
+  n.FreshD,
+  n.Result,
+  n.Comment,
+  n.Transferred,
+  n.UID,
+  n.Confirmed,
+  n.Measurement,
+  n.BoardID,
+  n.Pos,
+  n.Aborted,
+  n.SizeX,
+  n.SizeY,
+  n.PosX,
+  n.PosY,
+  n.ResultsID,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  n.surrogate_key
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+SELECT
+  h.LocalDateTime,
+  h.UTCTimeSpan,
+  h.Transponder,
+  h.UserName,
+  h.UserLocation,
+  h.Path,
+  h.IdKN,
+  h.ProductName,
+  h.ProductNumber,
+  h.BoardName,
+  h.SuctionType,
+  h.CalibrationHeight1,
+  h.CalibrationHeight2,
+  h.CalibrationWeight,
+  h.Volume,
+  h.Area,
+  h.Height,
+  h.LimitHandVacuum1,
+  h.LimitHandVacuum2,
+  h.LimitHandVacuum3,
+  h.LimitHandVacuum4,
+  h.LimitHeight1,
+  h.LimitHeight2,
+  h.LimitHeight3,
+  h.LimitHeight4,
+  h.CoreCompressionLimits1,
+  h.CoreCompressionLimits2,
+  h.CoreCompressionLimits3,
+  h.CoreCompressionLimits4,
+  h.LimitDensity1,
+  h.LimitDensity2,
+  h.LimitDensity3,
+  h.LimitDensity4,
+  h.LimitWeight1,
+  h.LimitWeight2,
+  h.LimitWeight3,
+  h.LimitWeight4,
+  h.ShowHandMeasurement,
+  h.ShowTableMeasurement,
+  h.ShowHeight,
+  h.ShowWeight,
+  h.ShowDensity,
+  h.ProductID,
+  h.FreshVV,
+  h.FreshH,
+  h.FreshVK,
+  h.FreshG,
+  h.FreshD,
+  h.Result,
+  h.Comment,
+  h.Transferred,
+  h.UID,
+  h.Confirmed,
+  h.Measurement,
+  h.BoardID,
+  h.Pos,
+  h.Aborted,
+  h.SizeX,
+  h.SizeY,
+  h.PosX,
+  h.PosY,
+  h.ResultsID,
+  FALSE AS is_current,
+  h.valid_from,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_to,
+  h.surrogate_key
+FROM ${self()} h
+JOIN CHANGED_KEYS k
+  ON h.surrogate_key = k.surrogate_key
+ AND h.valid_from    = k.valid_from
+WHERE h.is_current = TRUE
+
+
+`, `
+ 
+
+WITH S_SRC AS (
+  SELECT *
+  FROM ${ref("external_staging_qaver_pp3_results")}
+),
+
+S AS (
+  SELECT
+    s.LokalDateTime        AS LocalDateTime,
+    s.UTCTimeSpan          AS UTCTimeSpan,
+    s.Transponder          AS Transponder,
+    s.Benutzer_Name        AS UserName,
+    s.Benutzer_Standort    AS UserLocation,
+    s.Pfad                 AS Path,
+    s.KN                   AS IdKN,
+    s.PName                AS ProductName,
+    s.Artikelnummer        AS ProductNumber,
+    s.BoardName            AS BoardName,
+    s.Sauger               AS SuctionType,
+    s.Kalibrierh_he_1      AS CalibrationHeight1,
+    s.Kalibrierh_he_2      AS CalibrationHeight2,
+    s.Kalibriergewicht     AS CalibrationWeight,
+    s.Volumen              AS Volume,
+    s.\`Fl_che\`           AS Area,
+    s.\`H_he\`             AS Height,
+
+    s.A_VV_1               AS LimitHandVacuum1,
+    s.A_VV_2               AS LimitHandVacuum2,
+    s.A_VV_3               AS LimitHandVacuum3,
+    s.A_VV_4               AS LimitHandVacuum4,
+    s.A_H_1                AS LimitHeight1,
+    s.A_H_2                AS LimitHeight2,
+    s.A_H_3                AS LimitHeight3,
+    s.A_H_4                AS LimitHeight4,
+    s.A_VK_1               AS CoreCompressionLimits1,
+    s.A_VK_2               AS CoreCompressionLimits2,
+    s.A_VK_3               AS CoreCompressionLimits3,
+    s.A_VK_4               AS CoreCompressionLimits4,
+    s.A_D_1                AS LimitDensity1,
+    s.A_D_2                AS LimitDensity2,
+    s.A_D_3                AS LimitDensity3,
+    s.A_D_4                AS LimitDensity4,
+    s.A_G_1                AS LimitWeight1,
+    s.A_G_2                AS LimitWeight2,
+    s.A_G_3                AS LimitWeight3,
+    s.A_G_4                AS LimitWeight4,
+
+    s.ShowVerdichtungVorsatz AS ShowHandMeasurement,
+    s.ShowVerdichtungKern    AS ShowTableMeasurement,
+    s.ShowHoehe              AS ShowHeight,
+    s.ShowGewicht            AS ShowWeight,
+    s.ShowRohdichte          AS ShowDensity,
+
+    s.ProduktID            AS ProductID,
+    s.Frisch_VV            AS FreshVV,
+    s.Frisch_H             AS FreshH,
+    s.Frisch_VK            AS FreshVK,
+    s.Frisch_G             AS FreshG,
+    s.Frisch_D             AS FreshD,
+
+    s.Ergebnis             AS Result,
+    s.Kommentar            AS Comment,
+    s._bertragen           AS Transferred,
+    s._ID                  AS UID,
+    s.__Best_tigt          AS Confirmed,
+    s.Messung              AS Measurement,
+    s.BoardID              AS BoardID,
+    s.POS                  AS Pos,
+    s.Abbruch              AS Aborted,
+    s.SizeX                AS SizeX,
+    s.SizeY                AS SizeY,
+    s.PosX                 AS PosX,
+    s.PosY                 AS PosY,
+    s.ErgebnisseID         AS ResultsID,
+
+    TO_HEX(
+      SHA256(
+        CAST(COALESCE(CAST(s.ErgebnisseID AS STRING), '') AS STRING)
+      )
+    ) AS surrogate_key
+  FROM S_SRC s
+)
+
+SELECT
+  s.*,
+  TRUE  AS is_current,
+  CURRENT_DATETIME('Asia/Almaty')  AS valid_from,
+  CAST(NULL AS DATETIME) AS valid_to
+FROM S s
+
+`)}
