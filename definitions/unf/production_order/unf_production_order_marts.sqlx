@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: "gal_unf_marts",
+  name: "unf_production_order_marts",
+  tags: ["unf", "marts", "production_order"],
+  description: "Витрина производственных заказов (documents + products, только актуальные записи)"
+}
+
+SELECT
+  d.document_id,
+
+  COALESCE(d.document_number, p.document_number) AS document_number,
+
+  d.document_datetime,
+
+  d.owner_name,
+  d.manufacturer_name,
+
+  COALESCE(d.date, p.document_date) AS document_date,
+
+  d.start_datetime,
+  d.finish_datetime,
+  d.document_state,
+
+  d.surrogate_key AS document_surrogate_key,
+
+  p.nomenclature_name,
+  p.variation_name,
+  p.unit_name,
+  p.quantity,
+
+  p.surrogate_key AS product_surrogate_key
+
+FROM ${ref("history_unf_production_order_documents")} AS d
+
+LEFT JOIN ${ref("history_unf_production_order_products")} AS p
+  ON d.document_id = p.document_id
+  AND p.is_current = TRUE  
+
+WHERE d.is_current = TRUE
