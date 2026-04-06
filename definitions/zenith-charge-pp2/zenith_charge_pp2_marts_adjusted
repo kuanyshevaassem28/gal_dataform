@@ -1,0 +1,170 @@
+config {
+  type: "table",
+  schema: "gal_zenith_marts",
+  name: "zenith_charge_pp2_marts_adjusted",
+  tags: ["zenith", "charge_pp2", "zenith_charge_pp2"],
+  description: "Детализированный март Zenith PP2 с разбиением по сменам и пропорциональным распределением метрик",
+
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["plant_part_SID", "shift_number", "job_number"]
+  }
+}
+
+WITH zenith_base AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (ORDER BY bde_started) AS row_id,
+    101 AS plant_part_SID,
+    DATE(bde_started) AS production_day,
+    CASE 
+      WHEN TIME(bde_started) BETWEEN TIME '08:00:00' AND TIME '19:59:59' THEN 1 
+      ELSE 2 
+    END AS shift_number
+  FROM ${ref("zenith_charge_pp2_marts")}
+),
+
+unf_products AS (
+  SELECT *
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY document_number, EXTRACT(YEAR FROM document_date)
+        ORDER BY quantity DESC
+      ) AS rn
+    FROM ${ref("history_unf_production_products")}
+    WHERE is_current = TRUE
+  )
+  WHERE rn = 1
+),
+
+zames_with_avzak AS (
+  SELECT 
+    DATETIME(az.ZAMSTUNLTIME) AS ZAMSTUNLTIME_DT, 
+    jt.AV_ZAK
+  FROM ${ref("history_bsu_pp2_arc_zames")} az
+  JOIN ${ref("history_bsu_pp2_job_title")} jt
+    ON az.ZAKASID = jt.ORDERID
+  WHERE az.is_current = TRUE 
+    AND jt.is_current = TRUE
+),
+
+zames_hits AS (
+  SELECT z.file_name, a.AV_ZAK
+  FROM zenith_base z
+  JOIN zames_with_avzak a
+    ON a.ZAMSTUNLTIME_DT 
+       BETWEEN z.bde_started 
+       AND COALESCE(z.bde_stopped, DATETIME '2030-01-01')
+),
+
+zames_counts AS (
+  SELECT file_name, AV_ZAK, COUNT(*) AS zames_count
+  FROM zames_hits
+  GROUP BY file_name, AV_ZAK
+),
+
+zames_ranked AS (
+  SELECT 
+    file_name, 
+    AV_ZAK,
+    ROW_NUMBER() OVER (
+      PARTITION BY file_name 
+      ORDER BY zames_count DESC, AV_ZAK
+    ) AS rn
+  FROM zames_counts
+),
+
+av_zak_mapping AS (
+  SELECT file_name, AV_ZAK 
+  FROM zames_ranked 
+  WHERE rn = 1
+),
+
+measurement_matches_deduped AS (
+  SELECT ui_Measurement_ID, file_name
+  FROM (
+    SELECT 
+      m.ui_Measurement_ID, 
+      z.file_name,
+      ROW_NUMBER() OVER (
+        PARTITION BY m.ui_Measurement_ID 
+        ORDER BY z.bde_started
+      ) AS rn
+    FROM ${ref("history_measurements")} m
+    JOIN zenith_base z
+      ON CAST(m.Measurement_Time AS DATETIME) 
+         BETWEEN z.bde_started 
+         AND COALESCE(z.bde_stopped, DATETIME '2030-01-01')
+    WHERE m.Site_ID = 2
+  )
+  WHERE rn = 1
+),
+
+classified_quality AS (
+  SELECT
+    mm.file_name,
+    SUM(CASE WHEN GREATEST(IFNULL(h.Signal_Light_Total,0), IFNULL(w.Signal_Weight_Light_Total,0)) = 1 THEN 1 ELSE 0 END) AS value_1,
+    SUM(CASE WHEN GREATEST(IFNULL(h.Signal_Light_Total,0), IFNULL(w.Signal_Weight_Light_Total,0)) IN (2,3) THEN 1 ELSE 0 END) AS value_2,
+    SUM(CASE WHEN GREATEST(IFNULL(h.Signal_Light_Total,0), IFNULL(w.Signal_Weight_Light_Total,0)) >= 4 THEN 1 ELSE 0 END) AS value_3,
+    APPROX_QUANTILES(Concrete_Weight_Board_1, 3)[OFFSET(1)] AS median_weight_approx,
+    SUM(CASE WHEN GREATEST(IFNULL(h.Signal_Light_Total,0), IFNULL(w.Signal_Weight_Light_Total,0)) < 4 THEN Concrete_Weight_Board_1 ELSE 0 END) AS green_weight,
+    SUM(CASE WHEN GREATEST(IFNULL(h.Signal_Light_Total,0), IFNULL(w.Signal_Weight_Light_Total,0)) >= 4 THEN Concrete_Weight_Board_1 ELSE 0 END) AS red_weight
+  FROM measurement_matches_deduped mm
+  LEFT JOIN ${ref("rw_results_height_marts")}  h ON mm.ui_Measurement_ID = h.measurement_id
+  LEFT JOIN ${ref("rw_results_weight_marts")} w ON mm.ui_Measurement_ID = w.measurement_id
+  GROUP BY mm.file_name
+),
+
+-- ⚠️ ВСЯ ОСТАЛЬНАЯ ЛОГИКА БЕЗ ИЗМЕНЕНИЙ
+-- (она у тебя идеальная — оставляем как есть)
+
+base_data AS ( ... ),
+bounds AS ( ... ),
+internal_cuts AS ( ... ),
+internal_cuts_agg AS ( ... ),
+cut_arrays AS ( ... ),
+split_segments AS ( ... ),
+seg_stats AS ( ... ),
+seg_stats2 AS ( ... ),
+seg_ratio_stage AS ( ... ),
+base_alloc AS ( ... ),
+base_summed AS ( ... ),
+finalized AS ( ... )
+
+SELECT
+  charge_SID,
+  seg_idx AS segment_number,
+  CAST(charge_SID AS STRING) AS charge_sid_grouped,
+  plant_part_SID,
+  production_day AS date,
+  dt_start,
+  dt_end,
+  production_day,
+  shift_number,
+  Product_name,
+  Product_number,
+  job_number,
+  zenith_cycles,
+  rw_cycles,
+  diff,
+  pp.nomenclature_name,
+  pp.variation_name,
+  pp.unit_name,
+  value_0, value_1, value_2, value_3, value_4, value_5,
+  median_weight,
+  green_weight,
+  red_weight,
+  automatic_operation,
+  manual_operation,
+  setup_operation,
+  on_boards,
+  on_core_concrete,
+  on_facing_concrete,
+  on_product_transport,
+  plant_malfunction
+FROM finalized
+LEFT JOIN unf_products pp
+  ON finalized.job_number = pp.document_number
+ AND EXTRACT(YEAR FROM finalized.dt_start) = EXTRACT(YEAR FROM pp.document_date)
