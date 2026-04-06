@@ -1,0 +1,174 @@
+config {
+  type: "table",
+  schema: "gal_zenith_marts",
+  name: "detailed_downtime_mart_zenith",
+  tags: ["zenith", "charge_pp2", "zenith_charge_pp2"],
+  description: "Объединённая витрина простоев: ERP (Zenith) + UNF downtime + справочник причин",
+
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["plant_part_SID", "shift_number", "reason"]
+  }
+}
+
+WITH unf_products AS (
+  SELECT *
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY document_number, EXTRACT(YEAR FROM document_date)
+        ORDER BY quantity DESC
+      ) AS rn
+    FROM ${ref("history_unf_production_products")}
+    WHERE is_current = TRUE
+  )
+  WHERE rn = 1
+),
+
+g AS (
+  SELECT
+    date,
+    shift_number,
+    reason_code,
+    reason_name,
+    MIN(begin_dt) AS dt_start,
+    MAX(end_dt)   AS dt_end,
+    COUNT(*)      AS events_count,
+    SUM(allocated_seconds) AS duration_sec
+  FROM ${ref("detailed_unf_downtime_mart_zenith")}
+  GROUP BY date, shift_number, reason_code, reason_name
+),
+
+md AS (
+  SELECT
+    ID,
+    Name_ru,
+    site,
+    type,
+    standard_time_sec,
+    sz_reason,
+    plant_part_sid
+  FROM ${ref("external_md_downtime_reason")}
+),
+
+j AS (
+  SELECT
+    g.*,
+    md.plant_part_sid,
+    md.sz_reason,
+    md.type AS reason_type,
+    md.site,
+    LPAD(CAST(g.reason_code AS STRING), 3, '0') AS code3
+  FROM g
+  JOIN md
+    ON md.ID = SAFE_CAST(g.reason_code AS INT64)
+),
+
+aggregated_reasons_stop AS (
+  SELECT
+    CAST(NULL AS INT64)  AS charge_SID,
+    CAST(NULL AS STRING) AS job_number,
+    CAST(NULL AS INT64)  AS segment_number,
+
+    j.shift_number,
+    j.plant_part_sid AS plant_part_SID,
+    CAST(j.reason_code AS STRING) AS reason,
+    j.sz_reason,
+
+    j.dt_start,
+    j.dt_end,
+
+    j.events_count,
+    j.duration_sec,
+
+    CAST(NULL AS STRING) AS charge_sid_grouped,
+    FALSE AS is_production_reason,
+
+    j.date,
+    j.reason_name AS name_ru,
+
+    'Stop' AS reason_group,
+    j.reason_type,
+    "" AS comment,
+    j.site,
+
+    SAFE_CAST(CONCAT(SUBSTR(j.code3, 1, 1), '.', SUBSTR(j.code3, 2, 2)) AS FLOAT64) AS order_field,
+
+    CAST(NULL AS INT64) AS norma_val_sec,
+    CAST(NULL AS STRING) AS norm_type,
+    CAST(NULL AS STRING) AS nomenclature_name,
+    CAST(NULL AS STRING) AS variation_name,
+    CAST(NULL AS STRING) AS unit_name
+  FROM j
+)
+
+-- ===== ERP часть =====
+SELECT
+  erp.charge_SID,
+  erp.job_number,
+  erp.segment_number,
+  erp.shift_number,
+  erp.plant_part_SID,
+
+  reasons.name AS reason,
+  reasons.name AS sz_reason,
+
+  erp.dt_start,
+  erp.dt_end,
+
+  CAST(NULL AS INT64) AS events_count,
+
+  CASE
+    WHEN reasons.name = 'Boards'           THEN erp.on_boards
+    WHEN reasons.name = 'Product eject'    THEN erp.on_product_transport
+    WHEN reasons.name = 'C-Mix'            THEN erp.on_core_concrete
+    WHEN reasons.name = 'F-Mix'            THEN erp.on_facing_concrete
+    WHEN reasons.name = 'Production'       THEN erp.manual_operation
+    WHEN reasons.name = 'Auto'             THEN erp.automatic_operation
+    WHEN reasons.name = 'Cleaning'         THEN erp.setup_operation
+    WHEN reasons.name = 'General_fault'    THEN erp.plant_malfunction
+    ELSE NULL
+  END AS duration_sec,
+
+  CASE
+    WHEN LOWER(reasons.group) = 'stop' AND LOWER(reasons.type) = 'технологический' THEN 'Технологические остановки'
+    WHEN LOWER(reasons.group) = 'stop' AND LOWER(reasons.type) = 'нетехнологический' THEN 'Нетехнологические остановки'
+    WHEN erp.charge_SID IS NOT NULL THEN CAST(erp.charge_SID AS STRING)
+    ELSE NULL
+  END AS charge_sid_grouped,
+
+  CASE
+    WHEN LOWER(reasons.group) = 'stop' THEN FALSE
+    WHEN erp.charge_SID IS NOT NULL THEN TRUE
+    ELSE NULL
+  END AS is_production_reason,
+
+  erp.production_day AS date,
+
+  reasons.name_ru,
+  reasons.group AS reason_group,
+  reasons.type  AS reason_type,
+  reasons.comment,
+  reasons.site,
+  reasons.order_field,
+  reasons.norma_val_sec,
+  reasons.norm_type,
+
+  pp.nomenclature_name,
+  pp.variation_name,
+  pp.unit_name
+
+FROM ${ref("zenith_charge_pp2_marts_adjusted")} erp
+CROSS JOIN ${ref("external_hess_reasons_enriched")} reasons
+LEFT JOIN unf_products pp
+  ON erp.job_number = pp.document_number
+ AND EXTRACT(YEAR FROM erp.dt_start) = EXTRACT(YEAR FROM pp.document_date)
+ AND LOWER(reasons.group) <> 'stop'
+
+WHERE reasons.name IN ('Boards','Product eject','C-Mix','F-Mix','Production','Auto')
+
+-- ===== UNION с UNF downtime =====
+UNION ALL
+
+SELECT * FROM aggregated_reasons_stop
