@@ -120,18 +120,279 @@ classified_quality AS (
 -- ⚠️ ВСЯ ОСТАЛЬНАЯ ЛОГИКА БЕЗ ИЗМЕНЕНИЙ
 -- (она у тебя идеальная — оставляем как есть)
 
-base_data AS ( ... ),
-bounds AS ( ... ),
-internal_cuts AS ( ... ),
-internal_cuts_agg AS ( ... ),
-cut_arrays AS ( ... ),
-split_segments AS ( ... ),
-seg_stats AS ( ... ),
-seg_stats2 AS ( ... ),
-seg_ratio_stage AS ( ... ),
-base_alloc AS ( ... ),
-base_summed AS ( ... ),
-finalized AS ( ... )
+base_data AS (
+  SELECT
+    z.row_id AS ID,
+    z.row_id AS charge_SID,
+    z.plant_part_SID,
+    z.bde_started AS dt_start,
+    COALESCE(z.bde_stopped, DATETIME '2030-01-01') AS dt_end,
+    z.recipe_name AS Product_name,
+    CAST(NULL AS STRING) AS Product_number,
+    az.AV_ZAK AS job_number,
+
+    -- тоталы по партии (для распределения)
+    SAFE_CAST(IFNULL(z.per_shift_cycles,0) AS INT64) AS zenith_cycles,
+    SAFE_CAST(IFNULL(q.value_1,0) + IFNULL(q.value_2,0) + IFNULL(q.value_3,0) AS INT64) AS rw_cycles,
+
+    CAST(NULL AS INT64) AS value_0,
+    SAFE_CAST(IFNULL(q.value_1,0) AS INT64) AS value_1,
+    SAFE_CAST(IFNULL(q.value_2,0) AS INT64) AS value_2,
+    SAFE_CAST(z.per_shift_cycles - IFNULL(q.value_1,0) - IFNULL(q.value_2,0) AS INT64) AS value_3,
+    z.per_shift_cycles - IFNULL(q.value_1,0) - IFNULL(q.value_2,0) - IFNULL(q.value_3,0) as value_4,
+    --CAST(NULL AS INT64) AS value_4,
+    CAST(NULL AS INT64) AS value_5,
+    q.median_weight_approx AS median_weight,
+    q.green_weight,
+    q.red_weight,
+    -- «времена» (секунды) — тоталы по партии
+    SAFE_CAST(IFNULL(z.automatic_operation,0)        AS INT64) AS automatic_operation,
+    SAFE_CAST(IFNULL(z.manual_operation,0)           AS INT64) AS manual_operation,
+    SAFE_CAST(IFNULL(z.setup_operation,0)            AS INT64) AS setup_operation,
+    SAFE_CAST(IFNULL(z.on_boards,0)                  AS INT64) AS on_boards,
+    SAFE_CAST(IFNULL(z.on_core_concrete,0)           AS INT64) AS on_core_concrete,
+    SAFE_CAST(IFNULL(z.on_facing_concrete,0)         AS INT64) AS on_facing_concrete,
+    SAFE_CAST(IFNULL(z.on_product_transport,0)       AS INT64) AS on_product_transport,
+    SAFE_CAST(IFNULL(z.plant_malfunction,0)          AS INT64) AS plant_malfunction,
+
+    z.valid_from, z.valid_to, z.is_current, z.file_name
+  FROM zenith_base z
+  LEFT JOIN av_zak_mapping     az ON z.file_name = az.file_name
+  LEFT JOIN classified_quality q  ON z.file_name = q.file_name
+),
+
+-- ===== 1) Границы 08:00/20:00 и разрезы =====
+bounds AS (
+  SELECT
+    b.ID, b.charge_SID, b.file_name, b.dt_start, b.dt_end,
+    d AS bound_date,
+    DATETIME(d, TIME '08:00:00') AS bound_08,
+    DATETIME(d, TIME '20:00:00') AS bound_20
+  FROM base_data b,
+  UNNEST(GENERATE_DATE_ARRAY(DATE(b.dt_start) - 1, DATE(b.dt_end) + 1)) AS d
+),
+
+internal_cuts AS (
+  SELECT ID, charge_SID, file_name, cut
+  FROM (
+    SELECT ID, charge_SID, file_name, bound_08 AS cut, dt_start, dt_end FROM bounds
+    UNION ALL
+    SELECT ID, charge_SID, file_name, bound_20 AS cut, dt_start, dt_end FROM bounds
+  )
+  WHERE cut > dt_start AND cut < dt_end
+),
+
+internal_cuts_agg AS (
+  SELECT ID, ARRAY_AGG(cut ORDER BY cut) AS cuts_mid
+  FROM internal_cuts
+  GROUP BY ID
+),
+
+cut_arrays AS (
+  SELECT
+    b.*,
+    ARRAY_CONCAT([b.dt_start], IFNULL(ica.cuts_mid, []), [b.dt_end]) AS cuts
+  FROM base_data b
+  LEFT JOIN internal_cuts_agg ica ON ica.ID = b.ID
+),
+
+-- ===== 2) Интервалы (сегменты) =====
+split_segments AS (
+  SELECT
+    ID, charge_SID, plant_part_SID, Product_name, Product_number, job_number,
+    valid_from, valid_to, is_current, file_name, median_weight,
+
+    -- тоталы для распределения
+    SAFE_CAST(IFNULL(zenith_cycles,0) AS INT64) AS zenith_cycles_total,
+    SAFE_CAST(IFNULL(rw_cycles,0)     AS INT64) AS rw_cycles_total,
+
+    SAFE_CAST(IFNULL(value_0,0)       AS INT64) AS value_0_total,
+    SAFE_CAST(IFNULL(value_1,0)       AS INT64) AS value_1_total,
+    SAFE_CAST(IFNULL(value_2,0)       AS INT64) AS value_2_total,
+    SAFE_CAST(IFNULL(value_3,0)       AS INT64) AS value_3_total,
+    SAFE_CAST(IFNULL(value_4,0)       AS INT64) AS value_4_total,
+    SAFE_CAST(IFNULL(value_5,0)       AS INT64) AS value_5_total,
+    SAFE_CAST(IFNULL(green_weight,0)       AS INT64) AS green_weight_total,
+    SAFE_CAST(IFNULL(red_weight,0)       AS INT64) AS red_weight_total,
+    SAFE_CAST(IFNULL(automatic_operation,0)   AS INT64) AS automatic_operation_total,
+    SAFE_CAST(IFNULL(manual_operation,0)      AS INT64) AS manual_operation_total,
+    SAFE_CAST(IFNULL(setup_operation,0)       AS INT64) AS setup_operation_total,
+    SAFE_CAST(IFNULL(on_boards,0)             AS INT64) AS on_boards_total,
+    SAFE_CAST(IFNULL(on_core_concrete,0)             AS INT64) AS on_core_concrete_total,
+    SAFE_CAST(IFNULL(on_facing_concrete,0)             AS INT64) AS on_facing_concrete_total,
+
+
+    SAFE_CAST(IFNULL(on_product_transport,0)  AS INT64) AS on_product_transport_total,
+    SAFE_CAST(IFNULL(plant_malfunction,0)     AS INT64) AS plant_malfunction_total,
+
+    cuts[OFFSET(off)]     AS seg_start,
+    cuts[OFFSET(off + 1)] AS seg_end,
+    off AS seg_idx,
+    ARRAY_LENGTH(cuts) - 2 AS last_seg_idx
+  FROM cut_arrays,
+  UNNEST(GENERATE_ARRAY(0, ARRAY_LENGTH(cuts) - 2)) AS off
+),
+
+-- ===== 3) Длительности =====
+seg_stats AS (
+  SELECT s.*,
+         DATETIME_DIFF(s.seg_end, s.seg_start, SECOND) AS seg_seconds
+  FROM split_segments s
+),
+
+-- ===== 4) total_seconds отдельной оконной стадией =====
+seg_stats2 AS (
+  SELECT
+    ID, charge_SID, plant_part_SID, Product_name, Product_number, job_number,
+    valid_from, valid_to, is_current, file_name, median_weight,
+    seg_start AS dt_start, seg_end AS dt_end, seg_idx, last_seg_idx,
+
+    zenith_cycles_total, rw_cycles_total,
+    value_0_total, value_1_total, value_2_total, value_3_total, value_4_total, value_5_total,green_weight_total,red_weight_total,
+    automatic_operation_total, manual_operation_total, setup_operation_total,
+    on_boards_total, 
+    on_core_concrete_total, on_facing_concrete_total,on_product_transport_total, plant_malfunction_total,
+
+    seg_seconds,
+    SUM(seg_seconds) OVER (PARTITION BY ID) AS total_seconds
+  FROM seg_stats
+),
+
+-- ===== 5a) Вычисляем seg_ratio отдельно (чтобы использовать его ниже без ошибок alias)
+seg_ratio_stage AS (
+  SELECT
+    s2.*,
+    SAFE_DIVIDE(seg_seconds, NULLIF(total_seconds, 0)) AS seg_ratio
+  FROM seg_stats2 s2
+),
+
+-- ===== 5b) Базовые аллокации (FLOOR доли), без оконных функций; NULL → 0
+base_alloc AS (
+  SELECT
+    r.*,
+
+    CAST(FLOOR(COALESCE(seg_ratio,0) * zenith_cycles_total) AS INT64) AS zenith_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * rw_cycles_total)     AS INT64) AS rw_base,
+
+    CAST(FLOOR(COALESCE(seg_ratio,0) * value_0_total) AS INT64) AS v0_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * value_1_total) AS INT64) AS v1_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * value_2_total) AS INT64) AS v2_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * value_3_total) AS INT64) AS v3_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * value_4_total) AS INT64) AS v4_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * value_5_total) AS INT64) AS v5_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * green_weight_total) AS INT64) AS green_weight_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * red_weight_total) AS INT64) AS red_weight_base,
+
+    CAST(FLOOR(COALESCE(seg_ratio,0) * automatic_operation_total)  AS INT64) AS auto_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * manual_operation_total)     AS INT64) AS manual_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * setup_operation_total)      AS INT64) AS setup_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * on_boards_total)            AS INT64) AS on_boards_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * on_core_concrete_total)            AS INT64) AS on_core_concrete_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * on_facing_concrete_total)            AS INT64) AS on_facing_concrete_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * on_product_transport_total) AS INT64) AS on_transport_base,
+    CAST(FLOOR(COALESCE(seg_ratio,0) * plant_malfunction_total)    AS INT64) AS malfunction_base
+  FROM seg_ratio_stage r
+),
+
+-- ===== 6) Оконные суммы баз + остатки на последний сегмент =====
+base_summed AS (
+  SELECT
+    b.*,
+
+    SUM(zenith_base) OVER (PARTITION BY ID) AS zenith_base_sum,
+    SUM(rw_base)     OVER (PARTITION BY ID) AS rw_base_sum,
+
+    SUM(v0_base)     OVER (PARTITION BY ID) AS v0_base_sum,
+    SUM(v1_base)     OVER (PARTITION BY ID) AS v1_base_sum,
+    SUM(v2_base)     OVER (PARTITION BY ID) AS v2_base_sum,
+    SUM(v3_base)     OVER (PARTITION BY ID) AS v3_base_sum,
+    SUM(v4_base)     OVER (PARTITION BY ID) AS v4_base_sum,
+    SUM(v5_base)     OVER (PARTITION BY ID) AS v5_base_sum,
+    SUM(green_weight_base)     OVER (PARTITION BY ID) AS green_weight_base_sum,
+    SUM(red_weight_base)     OVER (PARTITION BY ID) AS red_weight_base_sum,
+
+    SUM(auto_base)       OVER (PARTITION BY ID) AS auto_base_sum,
+    SUM(manual_base)     OVER (PARTITION BY ID) AS manual_base_sum,
+    SUM(setup_base)      OVER (PARTITION BY ID) AS setup_base_sum,
+    SUM(on_boards_base)  OVER (PARTITION BY ID) AS on_boards_base_sum,
+    SUM(on_core_concrete_base)  OVER (PARTITION BY ID) AS on_core_concrete_base_sum,
+    SUM(on_facing_concrete_base)  OVER (PARTITION BY ID) AS on_facing_concrete_base_sum,
+    SUM(on_transport_base) OVER (PARTITION BY ID) AS on_transport_base_sum,
+    SUM(malfunction_base)  OVER (PARTITION BY ID) AS malfunction_base_sum,
+
+    CASE WHEN seg_idx = last_seg_idx THEN (zenith_cycles_total - SUM(zenith_base) OVER (PARTITION BY ID)) ELSE 0 END AS zenith_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (rw_cycles_total     - SUM(rw_base)     OVER (PARTITION BY ID)) ELSE 0 END AS rw_rest,
+
+    CASE WHEN seg_idx = last_seg_idx THEN (value_0_total - SUM(v0_base) OVER (PARTITION BY ID)) ELSE 0 END AS v0_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (value_1_total - SUM(v1_base) OVER (PARTITION BY ID)) ELSE 0 END AS v1_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (value_2_total - SUM(v2_base) OVER (PARTITION BY ID)) ELSE 0 END AS v2_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (value_3_total - SUM(v3_base) OVER (PARTITION BY ID)) ELSE 0 END AS v3_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (value_4_total - SUM(v4_base) OVER (PARTITION BY ID)) ELSE 0 END AS v4_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (value_5_total - SUM(v5_base) OVER (PARTITION BY ID)) ELSE 0 END AS v5_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (green_weight_total - SUM(green_weight_base) OVER (PARTITION BY ID)) ELSE 0 END AS green_weight_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (red_weight_total - SUM(red_weight_base) OVER (PARTITION BY ID)) ELSE 0 END AS red_weight_rest,
+
+
+    CASE WHEN seg_idx = last_seg_idx THEN (automatic_operation_total  - SUM(auto_base)        OVER (PARTITION BY ID)) ELSE 0 END AS auto_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (manual_operation_total     - SUM(manual_base)      OVER (PARTITION BY ID)) ELSE 0 END AS manual_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (setup_operation_total      - SUM(setup_base)       OVER (PARTITION BY ID)) ELSE 0 END AS setup_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (on_boards_total            - SUM(on_boards_base)   OVER (PARTITION BY ID)) ELSE 0 END AS on_boards_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (on_core_concrete_total     - SUM(on_core_concrete_base)   OVER (PARTITION BY ID)) ELSE 0 END AS on_core_concrete_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (on_facing_concrete_total   - SUM(on_facing_concrete_base)   OVER (PARTITION BY ID)) ELSE 0 END AS on_facing_concrete_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (on_product_transport_total - SUM(on_transport_base) OVER (PARTITION BY ID)) ELSE 0 END AS on_transport_rest,
+    CASE WHEN seg_idx = last_seg_idx THEN (plant_malfunction_total    - SUM(malfunction_base) OVER (PARTITION BY ID)) ELSE 0 END AS malfunction_rest
+  FROM base_alloc b
+),
+
+-- ===== 7) Финализация: смена, production_day и метрики
+finalized AS (
+  SELECT
+    a.ID, a.charge_SID, a.plant_part_SID, a.seg_idx,
+
+    -- production_day: если окончание ≤ 08:00 X, то X-1, иначе дата начала сегмента
+    CASE 
+      WHEN a.dt_end <= DATETIME(DATE(a.dt_end), TIME '08:00:00')
+      THEN DATE_SUB(DATE(a.dt_end), INTERVAL 1 DAY)
+      ELSE DATE(a.dt_start)
+    END AS production_day,
+
+    a.dt_start, a.dt_end,
+
+    CASE WHEN TIME(a.dt_start) BETWEEN TIME '08:00:00' AND TIME '19:59:59' THEN 1 ELSE 2 END AS shift_number,
+
+    a.Product_name, a.Product_number, a.job_number,
+
+    -- распределённые счётчики
+    a.zenith_base + a.zenith_rest AS zenith_cycles,
+    a.rw_base     + a.rw_rest     AS rw_cycles,
+
+    -- diff пересчитываем как разность
+    (a.zenith_base + a.zenith_rest) - (a.rw_base + a.rw_rest) AS diff,
+
+    a.v0_base + a.v0_rest AS value_0,
+    a.v1_base + a.v1_rest AS value_1,
+    a.v2_base + a.v2_rest AS value_2,
+    a.v3_base + a.v3_rest AS value_3,
+    a.v4_base + a.v4_rest AS value_4,
+    a.v5_base + a.v5_rest AS value_5,
+    a.green_weight_base + a.green_weight_rest AS green_weight,
+    a.red_weight_base + a.red_weight_rest AS red_weight,
+
+    median_weight,
+
+    -- «времена» (секунды), распределённые по сегментам
+    a.auto_base         + a.auto_rest         AS automatic_operation,
+    a.manual_base       + a.manual_rest       AS manual_operation,
+    a.setup_base        + a.setup_rest        AS setup_operation,
+    a.on_boards_base    + a.on_boards_rest    AS on_boards,
+    a.on_core_concrete_base    + a.on_core_concrete_rest    AS on_core_concrete,
+    a.on_facing_concrete_base    + a.on_facing_concrete_rest    AS on_facing_concrete,
+    a.on_transport_base + a.on_transport_rest AS on_product_transport,
+    a.malfunction_base  + a.malfunction_rest  AS plant_malfunction,
+
+    a.valid_from, a.valid_to, a.is_current
+  FROM base_summed a
+)
 
 SELECT
   charge_SID,
