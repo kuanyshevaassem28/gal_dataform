@@ -1,0 +1,165 @@
+config {
+  type: "table",
+  schema: "gal_zenith_marts",
+  name: "detailed_unf_downtime_mart_zenith",
+  tags: ["zenith", "charge_pp2", "zenith_charge_pp2"],
+  description: "Детализированный март простоев с разбиением по сменам (08:00 / 20:00) и пропорциональным распределением времени",
+
+  columns: {
+    surrogate_key:              "Исходный surrogate ключ",
+    segment_surrogate_key:      "Уникальный ключ сегмента",
+    begin_dt:                   "Начало сегмента",
+    end_dt:                     "Конец сегмента",
+    shift_number:               "Номер смены (1 — день, 2 — ночь)",
+    date:                       "Дата сегмента (с учетом смен)",
+    factual_seconds:            "Фактическая длительность сегмента (сек)",
+    allocated_seconds:          "Распределенная длительность (сек)",
+    group:                      "Группа оборудования",
+    operator:                   "Оператор",
+    reason_code:                "Код причины",
+    reason_name:                "Причина простоя",
+    date_old:                   "Исходная дата из источника",
+    is_current:                 "Флаг актуальности",
+    valid_from:                 "Начало актуальности",
+    valid_to:                   "Конец актуальности",
+    original_begin_dt:          "Исходное время начала",
+    original_end_dt:            "Исходное время окончания",
+    original_duration_seconds:  "Исходная длительность (сек)"
+  }
+}
+
+WITH base AS (
+  SELECT
+    `group`,
+    begin_time,
+    end_time,
+    operator,
+    reason_code,
+    reason_name,
+    SAFE_CAST(duration AS INT64) AS duration_min,
+    date,
+    surrogate_key,
+    is_current,
+    valid_from,
+    valid_to,
+
+    COALESCE(
+      SAFE.PARSE_DATETIME('%Y-%m-%dT%H:%M:%S', begin_time),
+      SAFE.PARSE_DATETIME('%Y-%m-%dT%H:%M:%E*S', begin_time)
+    ) AS begin_dt,
+
+    COALESCE(
+      SAFE.PARSE_DATETIME('%Y-%m-%dT%H:%M:%S', end_time),
+      SAFE.PARSE_DATETIME('%Y-%m-%dT%H:%M:%E*S', end_time)
+    ) AS end_dt
+
+  FROM ${ref("history_unf_downtimes")}
+  WHERE is_current = TRUE
+),
+
+valid AS (
+  SELECT
+    *,
+    duration_min * 60 AS base_seconds
+  FROM base
+  WHERE begin_dt IS NOT NULL
+    AND end_dt IS NOT NULL
+    AND end_dt >= begin_dt
+),
+
+points AS (
+  SELECT
+    v.*,
+    ARRAY_CONCAT(
+      [begin_dt],
+      ARRAY(
+        SELECT b
+        FROM (
+          SELECT DATETIME(d, t) AS b
+          FROM UNNEST(GENERATE_DATE_ARRAY(DATE(begin_dt), DATE(end_dt))) AS d
+          CROSS JOIN UNNEST([TIME '08:00:00', TIME '20:00:00']) AS t
+        )
+        WHERE b > begin_dt AND b < end_dt
+        ORDER BY b
+      ),
+      [end_dt]
+    ) AS pts
+  FROM valid v
+),
+
+seg AS (
+  SELECT
+    `group`,
+    operator,
+    reason_code,
+    reason_name,
+    date AS date_old,
+    surrogate_key,
+    is_current,
+    valid_from,
+    valid_to,
+    begin_dt AS original_begin_dt,
+    end_dt   AS original_end_dt,
+    base_seconds,
+
+    off AS seg_index,
+    pts[off]   AS seg_begin_dt,
+    pts[off+1] AS seg_end_dt,
+    DATETIME_DIFF(pts[off+1], pts[off], SECOND) AS seg_seconds
+
+  FROM points, UNNEST(pts) WITH OFFSET AS off
+  WHERE off < ARRAY_LENGTH(pts) - 1
+),
+
+alloc AS (
+  SELECT
+    s.*,
+    SUM(seg_seconds) OVER (PARTITION BY surrogate_key) AS total_seconds
+  FROM seg s
+)
+
+SELECT
+  surrogate_key,
+  FORMAT('%s#%02d', surrogate_key, seg_index + 1) AS segment_surrogate_key,
+
+  seg_begin_dt AS begin_dt,
+  seg_end_dt   AS end_dt,
+
+  CASE
+    WHEN TIME(seg_begin_dt) >= TIME '08:00:00'
+     AND TIME(seg_begin_dt) <  TIME '20:00:00' THEN 1
+    ELSE 2
+  END AS shift_number,
+
+  CASE
+    WHEN EXTRACT(HOUR FROM seg_begin_dt) >= 8
+      THEN DATE(seg_begin_dt)
+    ELSE DATE_SUB(DATE(seg_begin_dt), INTERVAL 1 DAY)
+  END AS date,
+
+  seg_seconds AS factual_seconds,
+
+  CAST(
+    FLOOR(
+      CASE
+        WHEN total_seconds > 0
+          THEN seg_seconds * 1.0 * base_seconds / total_seconds
+        ELSE 0
+      END
+    ) AS INT64
+  ) AS allocated_seconds,
+
+  `group`,
+  operator,
+  reason_code,
+  reason_name,
+  date_old,
+  is_current,
+  valid_from,
+  valid_to,
+  original_begin_dt,
+  original_end_dt,
+  base_seconds AS original_duration_seconds
+
+FROM alloc
+ORDER BY surrogate_key, seg_index
