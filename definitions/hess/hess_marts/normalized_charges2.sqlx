@@ -7,23 +7,25 @@ config {
 WITH
 -- 1. Все актуальные партии
 base_charges AS (
-  SELECT DISTINCT
+  SELECT
+  distinct
     *,
-    (dt_start = dt_end) AS is_zero_duration,
+    dt_start = dt_end AS is_zero_duration,
     (value_0 + value_1 + value_2 + value_3 + value_4 + value_5) AS value_sum
   FROM ${ref("Exchange_charge_erp_history")}
-  WHERE is_current = TRUE
+  WHERE
+    is_current = TRUE
 ),
 
--- 2. Все возможные старты (для поиска следующего)
+-- 2. Для всех партий определяем расширенное окончание (если нулевая длительность)
 all_valid_starts AS (
   SELECT
     dt_start,
     plant_part_SID
-  FROM base_charges
+  FROM
+    base_charges
 ),
 
--- 3. Корректируем dt_end
 adjusted_charges AS (
   SELECT
     b.*,
@@ -36,23 +38,25 @@ adjusted_charges AS (
       )
       ELSE b.dt_end
     END AS dt_end_adjusted
-  FROM base_charges b
+  FROM
+    base_charges b
 ),
 
--- 4. Замесы с AV_ZAK
+-- 3. Замесы с привязкой к AV_ZAK
 zames_with_avzak AS (
   SELECT
     az.ZAMSTUNLTIME,
     jt.AV_ZAK
-  FROM ${ref("history_bsu_pp3_arc_zames")} az
-  JOIN ${ref("history_bsu_pp3_job_title")} jt
+  FROM `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_zames` az
+  JOIN
+    `galery-22579.gal_bsu_pp3.history_bsu_pp3_job_title` jt
     ON az.ZAKASID = jt.ORDERID
   WHERE
     az.is_current = TRUE
     AND jt.is_current = TRUE
 ),
 
--- 5. Кандидаты на восстановление job_number
+-- 4. Отбор кандидатов на подстановку job_number (пустые + value_sum > 0)
 candidates_for_estimation AS (
   SELECT *
   FROM adjusted_charges
@@ -62,41 +66,42 @@ candidates_for_estimation AS (
     AND value_sum > 0
 ),
 
--- 6. Попадание замесов в партии
+-- 5. Замесы, попадающие в партии-кандидаты
 zames_hits AS (
   SELECT
     c.charge_sid,
     z.AV_ZAK
-  FROM candidates_for_estimation c
-  JOIN zames_with_avzak z
-    ON z.ZAMSTUNLTIME BETWEEN c.dt_start 
-    AND COALESCE(c.dt_end_adjusted, TIMESTAMP('2030-01-01'))
+  FROM
+    candidates_for_estimation c
+  JOIN
+    zames_with_avzak z
+    ON z.ZAMSTUNLTIME BETWEEN c.dt_start AND COALESCE(c.dt_end_adjusted, TIMESTAMP '2030-01-01')
 ),
 
--- 7. Считаем количество замесов
+-- 6. Считаем замесы по AV_ZAK
 zames_counts AS (
   SELECT
     charge_sid,
     AV_ZAK,
     COUNT(*) AS zames_count
-  FROM zames_hits
-  GROUP BY charge_sid, AV_ZAK
+  FROM
+    zames_hits
+  GROUP BY
+    charge_sid, AV_ZAK
 ),
 
--- 8. Ранжируем
 zames_ranks AS (
   SELECT
     charge_sid,
     AV_ZAK,
-    zames_count,
-    RANK() OVER (
-      PARTITION BY charge_sid
-      ORDER BY zames_count DESC, AV_ZAK
-    ) AS rnk
-  FROM zames_counts
+    RANK() OVER (PARTITION BY charge_sid ORDER BY COUNT(*) DESC, AV_ZAK) AS rnk
+  FROM
+    zames_hits
+  GROUP BY
+    charge_sid, AV_ZAK
 ),
 
--- 9. Берём лучший AV_ZAK
+-- 7. Подставляем job_number_estimated только тем, кому это нужно
 job_number_corrections AS (
   SELECT
     charge_sid,
@@ -105,7 +110,7 @@ job_number_corrections AS (
   WHERE rnk = 1
 ),
 
--- 10. Финальный слой
+-- 8. Финальный объединённый слой
 final AS (
   SELECT
     a.ID,
@@ -113,18 +118,13 @@ final AS (
     a.plant_part_SID,
     a.production_day,
     a.dt_start,
-    COALESCE(a.dt_end_adjusted, TIMESTAMP('2030-01-01')) AS dt_end,
-    a.dt_end AS original_dt_end,
+    COALESCE(a.dt_end_adjusted, TIMESTAMP '2030-01-01') AS dt_end,
+    a.dt_end AS original_dt_end, 
     a.shift_number,
     a.Product_name,
     a.Product_number,
     COALESCE(j.job_number_estimated, a.job_number) AS job_number,
-    a.value_0,
-    a.value_1,
-    a.value_2,
-    a.value_3,
-    a.value_4,
-    a.value_5,
+    a.value_0, a.value_1, a.value_2, a.value_3, a.value_4, a.value_5,
     a.Valid_from,
     a.Valid_to,
     a.is_current,
@@ -133,8 +133,10 @@ final AS (
       ELSE 'original'
     END AS job_number_source,
     a.is_zero_duration
-  FROM adjusted_charges a
-  LEFT JOIN job_number_corrections j
+  FROM
+    adjusted_charges a
+  LEFT JOIN
+    job_number_corrections j
     ON a.charge_sid = j.charge_sid
 )
 
