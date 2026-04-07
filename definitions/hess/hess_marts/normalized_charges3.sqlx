@@ -1,0 +1,164 @@
+config {
+  type: "view",
+  schema: "gal_hess_marts",
+  name: "normalized_charges3"
+}
+
+-- Оптимизированная и корректная версия normalized_charges3
+-- Сегментируем только по внутренним 08:00 и 20:00
+
+WITH base_charges AS (
+  SELECT
+    charge_sid,
+    dt_start,
+    dt_end,
+    job_number,
+    job_number_source,
+    Product_name,
+    Product_number,
+    value_0, value_1, value_2, value_3, value_4, value_5,
+    production_day,
+    shift_number,
+    plant_part_SID,
+    Valid_from,
+    Valid_to,
+    is_current,
+    dt_start AS original_dt_start,
+    dt_end AS original_dt_end 
+  FROM ${ref("normalized_charges2")}
+),
+
+-- Генерация всех потенциальных критических точек
+expanded_bounds AS (
+  SELECT
+    b.charge_sid,
+    TIMESTAMP(DATETIME(day, TIME(hour_val, 0, 0))) AS ts,
+    b.dt_start,
+    b.dt_end
+  FROM base_charges b
+  CROSS JOIN UNNEST(GENERATE_DATE_ARRAY(DATE(b.dt_start), DATE(b.dt_end))) AS day
+  CROSS JOIN UNNEST([8, 20]) AS hour_val
+),
+
+-- Только точки внутри партии
+filtered_bounds AS (
+  SELECT charge_sid, ts AS boundary
+  FROM expanded_bounds
+  WHERE ts > dt_start AND ts < dt_end
+),
+
+-- Объединение всех границ
+raw_bounds AS (
+  SELECT charge_sid, dt_start AS boundary FROM base_charges
+  UNION ALL
+  SELECT charge_sid, dt_end AS boundary FROM base_charges
+  UNION ALL
+  SELECT * FROM filtered_bounds
+),
+
+-- Упорядоченные границы без дубликатов
+ordered_bounds AS (
+  SELECT
+    charge_sid,
+    boundary,
+    ROW_NUMBER() OVER (PARTITION BY charge_sid ORDER BY boundary) AS rn
+  FROM (SELECT DISTINCT * FROM raw_bounds)
+),
+
+-- Сегменты
+segment_pairs AS (
+  SELECT
+    a.charge_sid,
+    a.boundary AS segment_start,
+    b.boundary AS segment_end,
+    a.rn AS segment_number
+  FROM ordered_bounds a
+  JOIN ordered_bounds b
+    ON a.charge_sid = b.charge_sid AND b.rn = a.rn + 1
+),
+
+-- Объединение с базовыми данными
+segments_with_data AS (
+  SELECT
+    s.charge_sid,
+    s.segment_number,
+    s.segment_start,
+    s.segment_end,
+    b.original_dt_start,
+    b.original_dt_end,
+    b.dt_start AS charge_dt_start,
+    b.dt_end AS charge_dt_end,
+    b.job_number,
+    b.job_number_source,
+    b.Product_name,
+    b.Product_number,
+    b.value_0, b.value_1, b.value_2, b.value_3, b.value_4, b.value_5,
+    b.production_day,
+    b.shift_number,
+    b.plant_part_SID,
+    b.Valid_from,
+    b.Valid_to,
+    b.is_current,
+    TIMESTAMP_DIFF(s.segment_end, s.segment_start, SECOND) AS segment_duration_sec,
+    TIMESTAMP_DIFF(b.dt_end, b.dt_start, SECOND) AS total_duration_sec
+  FROM segment_pairs s
+  JOIN base_charges b USING (charge_sid)
+),
+
+-- Распределение value_*
+value_distributed AS (
+  SELECT *,
+    SAFE_CAST(FLOOR(segment_duration_sec * value_0 / NULLIF(total_duration_sec, 0)) AS INT64) AS value_0_seg,
+    SAFE_CAST(FLOOR(segment_duration_sec * value_1 / NULLIF(total_duration_sec, 0)) AS INT64) AS value_1_seg,
+    SAFE_CAST(FLOOR(segment_duration_sec * value_2 / NULLIF(total_duration_sec, 0)) AS INT64) AS value_2_seg,
+    SAFE_CAST(FLOOR(segment_duration_sec * value_3 / NULLIF(total_duration_sec, 0)) AS INT64) AS value_3_seg,
+    SAFE_CAST(FLOOR(segment_duration_sec * value_4 / NULLIF(total_duration_sec, 0)) AS INT64) AS value_4_seg,
+    SAFE_CAST(FLOOR(segment_duration_sec * value_5 / NULLIF(total_duration_sec, 0)) AS INT64) AS value_5_seg
+  FROM segments_with_data
+),
+
+-- Подсчёты для остатка
+segment_totals AS (
+  SELECT
+    charge_sid,
+    MAX(segment_number) AS max_segment_number,
+    SUM(value_0_seg) AS total_0,
+    SUM(value_1_seg) AS total_1,
+    SUM(value_2_seg) AS total_2,
+    SUM(value_3_seg) AS total_3,
+    SUM(value_4_seg) AS total_4,
+    SUM(value_5_seg) AS total_5
+  FROM value_distributed
+  GROUP BY charge_sid
+)
+
+-- Финальный вывод
+SELECT
+  v.charge_sid,
+  v.segment_number,
+  v.segment_start AS dt_start,
+  v.segment_end AS dt_end,
+  v.original_dt_start,
+  v.original_dt_end,
+  v.charge_dt_start,
+  v.charge_dt_end,
+  v.segment_duration_sec,
+  v.job_number,
+  v.job_number_source,
+  v.Product_name,
+  v.Product_number,
+  v.production_day,
+  v.shift_number,
+  v.plant_part_SID,
+  v.Valid_from,
+  v.Valid_to,
+  v.is_current,
+  CASE WHEN v.segment_number = t.max_segment_number THEN v.value_0_seg + IFNULL(v.value_0 - t.total_0, 0) ELSE v.value_0_seg END AS value_0,
+  CASE WHEN v.segment_number = t.max_segment_number THEN v.value_1_seg + IFNULL(v.value_1 - t.total_1, 0) ELSE v.value_1_seg END AS value_1,
+  CASE WHEN v.segment_number = t.max_segment_number THEN v.value_2_seg + IFNULL(v.value_2 - t.total_2, 0) ELSE v.value_2_seg END AS value_2,
+  CASE WHEN v.segment_number = t.max_segment_number THEN v.value_3_seg + IFNULL(v.value_3 - t.total_3, 0) ELSE v.value_3_seg END AS value_3,
+  CASE WHEN v.segment_number = t.max_segment_number THEN v.value_4_seg + IFNULL(v.value_4 - t.total_4, 0) ELSE v.value_4_seg END AS value_4,
+  CASE WHEN v.segment_number = t.max_segment_number THEN v.value_5_seg + IFNULL(v.value_5 - t.total_5, 0) ELSE v.value_5_seg END AS value_5
+FROM value_distributed v
+LEFT JOIN segment_totals t USING (charge_sid)
+ORDER BY charge_sid, segment_number
