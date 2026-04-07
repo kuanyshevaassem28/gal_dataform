@@ -1,0 +1,137 @@
+config {
+  type: "table",
+  schema: "gal_hess_marts",
+  name: "daily_shift_kpi_mart"
+}
+ 
+WITH
+-- 1. Смена формы и цвета (только по мокрой стороне, реальные партии)
+sorted_wet AS (
+  SELECT
+    date,
+    dt_start,
+    nomenclature_name,
+    variation_name,
+    ROW_NUMBER() OVER (PARTITION BY date ORDER BY dt_start) AS rn
+  FROM ${ref("gal_hess_charge_summary_mart")} 
+  WHERE plant_part_SID = 101
+    AND charge_sid_grouped = CAST(charge_SID AS STRING)
+    AND nomenclature_name IS NOT NULL
+    AND variation_name IS NOT NULL
+),
+transitions AS (
+  SELECT
+    curr.date,
+    COUNTIF(curr.nomenclature_name != prev.nomenclature_name) AS form_change_count,
+    COUNTIF(
+      curr.nomenclature_name = prev.nomenclature_name AND
+      curr.variation_name != prev.variation_name
+    ) AS color_change_count
+  FROM sorted_wet curr
+  LEFT JOIN sorted_wet prev
+    ON curr.date = prev.date AND curr.rn = prev.rn + 1
+  GROUP BY curr.date
+),
+
+-- 2. Агрегация по суткам и участкам
+aggregated AS (
+  SELECT
+    date,
+    plant_part_SID,
+
+    -- value
+    SUM(value_0) AS value_0,
+    SUM(value_1) AS value_1,
+    SUM(value_2) AS value_2,
+    SUM(value_3) AS value_3,
+    SUM(value_4) AS value_4,
+    SUM(value_5) AS value_5,
+
+    -- такты
+    SUM(total_cycles) AS total_cycles,
+    SUM(group_total_cycles) AS group_total_cycles,
+    SUM(norm_wait) as norm_wait,
+    SUM(bsu_concreate_weight_distributed) as bsu_concreate_weight,
+    sum(total_cycles_weight) as total_cycles_weight,
+
+    -- факт и план
+    SUM(CASE WHEN unit_name = 'м2' THEN total_units ELSE 0 END) AS fact_m2,
+    SUM(CASE WHEN unit_name = 'шт' THEN total_units ELSE 0 END) AS fact_pcs,
+    SUM(CASE WHEN unit_name = 'м2' THEN distributed_plan_units ELSE 0 END) AS plan_m2,
+    SUM(CASE WHEN unit_name = 'шт' THEN distributed_plan_units ELSE 0 END) AS plan_pcs,
+    sum(distributed_plan_units) as total_plan_cycles,
+    sum(standard_production_time) as standard_production_time,
+
+    -- причины
+    SUM(stop_time) AS stop_time,
+    SUM(stop_time_tech) AS stop_time_tech,
+    SUM(stop_time_netech) AS stop_time_netech,
+    SUM(wait_time) AS wait_time,
+    SUM(production_time) AS production_time,
+    SUM(auto_time) AS auto_time,
+    SUM(unconfirmed_time) AS unconfirmed_time,
+    SUM(qaver_time) AS qaver_time,
+    SUM(all_time_reason) AS all_time_reason,
+
+    -- специальные причины
+    SUM(Product_change_time) AS Product_change_time,
+    SUM(Color_change_time) AS Color_change_time,
+    SUM(Cleaning_time) AS Cleaning_time,
+    SUM(Shift_change_time) AS Shift_change_time,
+    SUM(Boards_time) AS Boards_time,
+    SUM(C_Mix_time) AS C_Mix_time,
+    SUM(F_Mix_time) AS F_Mix_time,
+    SUM(Product_eject_time) AS Product_eject_time,
+
+    -- средние времена (по реальным партиям)
+    AVG(IF(charge_sid_grouped = CAST(charge_SID AS STRING) AND total_cycles > 0, avg_full_cycle_time_sec, NULL)) AS avg_full_cycle_time_sec,
+    AVG(IF(charge_sid_grouped = CAST(charge_SID AS STRING) AND total_cycles > 0, avg_no_stop_cycle_time_sec, NULL)) AS avg_no_stop_cycle_time_sec,
+    AVG(IF(charge_sid_grouped = CAST(charge_SID AS STRING) AND total_cycles > 0, avg_machine_cycle_time_sec, NULL)) AS avg_machine_cycle_time_sec,
+    AVG(IF(charge_sid_grouped = CAST(charge_SID AS STRING) AND total_cycles > 0, avg_no_stop_cycle_time_sec- planned_cycle_time, NULL)) AS avg_no_stop_cycle_time_dev_sec,
+    AVG(IF(charge_sid_grouped = CAST(charge_SID AS STRING) AND total_cycles > 0, avg_machine_cycle_time_sec- planned_cycle_time, NULL)) AS avg_machine_cycle_time_dev_sec,
+    -- норматив
+    MAX(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN planned_cycle_time ELSE NULL END) AS planned_cycle_time,
+
+    -- время периода
+    MIN(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN dt_start ELSE NULL END) AS dt_start,
+    MAX(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN dt_end ELSE NULL END) AS dt_end
+
+  FROM ${ref("gal_hess_charge_summary_mart")}  
+  GROUP BY date, plant_part_SID
+)
+
+-- 3. Финальный SELECT
+SELECT
+  a.*,
+
+  -- переходы
+  COALESCE(t.form_change_count, 0) AS form_change_count,
+  COALESCE(t.color_change_count, 0) AS color_change_count,
+
+  -- нормативы
+  COALESCE(t.form_change_count, 0) * 30 * 60 AS planned_form_change_time,
+  COALESCE(t.color_change_count, 0) * 20 * 60 AS planned_color_change_time,
+  4 * 60 * 60 AS planned_cleaning_maintenance_time,
+  COALESCE(a.Cleaning_time, 0) + COALESCE(a.Shift_change_time, 0) AS cleaning_maintenance_time,
+
+  -- нормативное время = такты * план + плановые нормы
+  SAFE_DIVIDE(a.planned_cycle_time, 1) * a.total_cycles
+    + COALESCE(t.form_change_count, 0) * 30 * 60
+    + COALESCE(t.color_change_count, 0) * 20 * 60
+    + COALESCE(a.norm_wait, 0)
+    + 4 * 60 * 60 AS normative_time_sec,
+
+  -- выполнение плана
+  SAFE_DIVIDE(a.total_cycles, NULLIF(a.total_plan_cycles, 0)) AS fact_to_plan_ratio,
+
+  -- выполнение через нормативное время (в рамках 24 часов)
+  NULLIF((SAFE_DIVIDE(a.standard_production_time
+      + COALESCE(a.norm_wait, 0) 
+      + COALESCE(t.form_change_count, 0) * 30 * 60
+      + COALESCE(t.color_change_count, 0) * 20 * 60
+      + 4 * 60 * 60
+  , 86400)), 0) AS fact_to_plan_ratio_by_time
+
+FROM aggregated a
+LEFT JOIN transitions t ON a.date = t.date
+ORDER BY a.date, a.plant_part_SID
