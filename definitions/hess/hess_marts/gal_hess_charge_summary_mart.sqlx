@@ -1,0 +1,240 @@
+config {
+  type: "table",
+  schema: "gal_hess_marts",
+  name: "gal_hess_charge_summary_mart"
+}
+
+
+WITH
+-- enriched план
+plan_data AS (
+  SELECT *
+  FROM (
+    SELECT
+      CAST(document_number AS STRING) AS document_number,
+      SAFE_CAST(document_date AS DATE) AS document_date,
+      SAFE_CAST(plan_value AS FLOAT64) AS plan_value,
+      ROW_NUMBER() OVER (
+        PARTITION BY CAST(document_number AS STRING), SAFE_CAST(document_date AS DATE)
+        ORDER BY document_date DESC
+      ) AS row_num
+    FROM  ${ref("external_production_plan_input")} 
+  )
+  WHERE row_num = 1
+),
+
+-- enriched упаковка
+pmg_data AS (
+  SELECT
+    nomenclature_name,
+    thickness,
+    ROUND(square_meters_per_pallet / layers_per_pallet, 3) AS units_per_layer,
+    (pallet_gross_weight_kg - 16)/layers_per_pallet as norm_layer_weight,
+    norm_cycle
+  FROM ${ref("external_packaging_material_registry")} 
+  WHERE manufacturer = "ПП3 Линия вибропрессования 1"
+),
+
+-- причины из detailed
+reason_data AS (
+  SELECT
+    charge_SID,
+    segment_number,
+    charge_sid_grouped,
+    plant_part_SID,
+    nomenclature_name,
+    variation_name,
+    unit_name,
+    DATE(
+      CASE
+        WHEN TIME(dt_start) < TIME "08:00:00"
+          THEN DATETIME_SUB(dt_start, INTERVAL 1 DAY)
+        ELSE dt_start
+      END
+    ) AS date,
+    MIN(dt_start) AS dt_start,
+    MAX(dt_end) AS dt_end,
+    is_production_reason,
+    SUM(CASE WHEN lower(reason_group) = 'stop' THEN duration_sec ELSE 0 END) AS stop_time,
+    SUM(CASE WHEN lower(reason_group) = 'wait' THEN duration_sec ELSE 0 END) AS wait_time,
+    SUM(CASE WHEN lower(reason_group) = 'production' THEN duration_sec ELSE 0 END) AS production_time,
+    SUM(CASE WHEN lower(reason_group) = 'auto' THEN duration_sec ELSE 0 END) AS auto_time,
+    SUM(CASE WHEN lower(reason_group) = 'unconfirmed' THEN duration_sec ELSE 0 END) AS unconfirmed_time,
+    SUM(CASE WHEN lower(reason_group) = 'qaver' THEN duration_sec ELSE 0 END) AS qaver_time,
+    SUM(CASE WHEN LOWER(reason_group) = 'stop' 
+      AND LOWER(reason_type) = 'технологический' THEN duration_sec ELSE 0 END)   AS Stop_time_tech,
+    SUM(CASE WHEN LOWER(reason_group) = 'stop' 
+      AND LOWER(reason_type) = 'нетехнологический' THEN duration_sec ELSE 0 END) AS Stop_time_netech,
+    SUM(CASE WHEN LOWER(sz_reason) = 'product_change' THEN duration_sec ELSE 0 END) AS Product_change_time,
+    SUM(CASE WHEN LOWER(sz_reason) = 'color_change' THEN duration_sec ELSE 0 END) AS Color_change_time,
+    SUM(CASE WHEN LOWER(sz_reason) = 'cleaning' THEN duration_sec ELSE 0 END) AS Cleaning_time,
+    SUM(CASE WHEN LOWER(sz_reason) = 'shift_change' THEN duration_sec ELSE 0 END) AS Shift_change_time,
+    SUM(CASE WHEN LOWER(sz_reason) = 'boards' THEN duration_sec ELSE 0 END) AS Boards_time,
+    SUM(CASE WHEN LOWER(sz_reason) = 'c-mix' THEN duration_sec ELSE 0 END) AS C_Mix_time,
+    SUM(CASE WHEN LOWER(sz_reason) = 'f-mix' THEN duration_sec ELSE 0 END) AS F_Mix_time,
+    SUM(CASE WHEN LOWER(sz_reason) = 'product eject' THEN duration_sec ELSE 0 END) AS Product_eject_time,
+    SUM(duration_sec) AS all_time_reason
+  FROM ${ref("detailed_downtime_mart")}
+  GROUP BY charge_SID, segment_number, charge_sid_grouped, is_production_reason, plant_part_SID, date, nomenclature_name, variation_name, unit_name
+),
+
+-- партии с сегментами
+erp_data AS (
+  SELECT
+    * ,
+    DATE(
+      CASE
+        WHEN TIME(dt_start) < TIME "08:00:00"
+          THEN DATETIME_SUB(dt_start, INTERVAL 1 DAY)
+        ELSE dt_start
+      END
+    ) AS date,
+    (value_1 + value_2 + value_3) AS total_cycles,
+    TIMESTAMP_DIFF(dt_end, dt_start, SECOND) AS duration_seconds,
+    SAFE_DIVIDE(
+      TIMESTAMP_DIFF(dt_end, dt_start, SECOND),
+      NULLIF((value_1 + value_2 + value_3), 0)
+    ) AS avg_cycle_time_sec
+  FROM  ${ref("normalized_charges3_materialized")} 
+  WHERE is_current = TRUE
+),
+
+-- распределение веса замесов
+bsu_distributed AS (
+  SELECT
+    e.charge_SID,
+    e.segment_number,
+    e.job_number,
+    e.plant_part_SID,
+    e.total_cycles,
+    SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID) AS job_total_cycles,
+    SAFE_DIVIDE(
+      e.total_cycles,
+      NULLIF(SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID), 0)
+    ) AS job_share,
+    bsu.total_factweight / 1000.0 AS bsu_total_weight_t,
+    SAFE_DIVIDE(
+      e.total_cycles,
+      NULLIF(SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID), 0)
+    ) * (bsu.total_factweight / 1000.0) AS bsu_distributed_weight_t
+  FROM erp_data e
+  LEFT JOIN ${ref("bsu_pp3_job_year_weight")} bsu
+    ON e.job_number = bsu.av_zak
+    AND EXTRACT(YEAR FROM e.production_day) = bsu.year_created
+)
+
+-- финальный SELECT
+SELECT
+  r.charge_SID,
+  r.segment_number,
+  r.charge_sid_grouped,
+  r.plant_part_SID,
+  r.date,
+  r.dt_start,
+  r.dt_end,
+
+  -- enriched из erp
+  e.production_day,
+  e.shift_number,
+  e.Product_name,
+  e.Product_number,
+  e.job_number,
+
+  r.nomenclature_name,
+  r.variation_name,
+  r.unit_name,
+
+  -- продукция
+  CASE WHEN is_production_reason THEN e.value_0 ELSE NULL END AS value_0,
+  CASE WHEN is_production_reason THEN e.value_1 ELSE NULL END AS value_1,
+  CASE WHEN is_production_reason THEN e.value_2 ELSE NULL END AS value_2,
+  CASE WHEN is_production_reason THEN e.value_3 ELSE NULL END AS value_3,
+  CASE WHEN is_production_reason THEN e.value_4 ELSE NULL END AS value_4,
+  CASE WHEN is_production_reason THEN e.value_5 ELSE NULL END AS value_5,
+  CASE WHEN is_production_reason THEN e.total_cycles ELSE NULL END AS total_cycles,
+  CASE WHEN is_production_reason THEN e.duration_seconds ELSE NULL END AS duration_seconds,
+  CASE WHEN is_production_reason THEN e.avg_cycle_time_sec ELSE NULL END AS avg_full_cycle_time_sec,
+  CASE WHEN is_production_reason THEN SAFE_DIVIDE(r.production_time,e.total_cycles) ELSE NULL END AS avg_machine_cycle_time_sec,
+  CASE WHEN is_production_reason THEN safe_divide(r.all_time_reason,e.total_cycles) ELSE NULL END AS avg_no_stop_cycle_time_sec,
+CASE 
+  WHEN is_production_reason THEN e.total_cycles * pm.units_per_layer
+  ELSE NULL
+END AS total_units,
+
+  -- план
+  p.plan_value,
+  CASE 
+    WHEN is_production_reason and CONTAINS_SUBSTR(r.variation_name, "KIIZ STONE") THEN (25 - pm.norm_cycle)*e.total_cycles
+    ELSE 0
+  END AS norm_wait,
+   
+  CASE 
+    WHEN is_production_reason and STARTS_WITH(r.nomenclature_name, "ПФ") and CONTAINS_SUBSTR(r.variation_name, "ВЫСОКИЙ") THEN pm.norm_cycle + 1
+    ELSE pm.norm_cycle
+  END as planned_cycle_time,
+
+  CASE 
+    WHEN is_production_reason then e.total_cycles else 0 
+  end 
+  * 
+  CASE 
+    WHEN STARTS_WITH(r.nomenclature_name, "ПФ") and CONTAINS_SUBSTR(r.variation_name, "ВЫСОКИЙ") THEN pm.norm_cycle + 1
+    ELSE pm.norm_cycle
+  END AS standard_production_time,
+
+  pm.units_per_layer,
+  SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID) AS group_total_cycles,
+
+  -- распределение плана
+  SAFE_DIVIDE(
+    CASE WHEN is_production_reason THEN e.total_cycles ELSE NULL END,
+    NULLIF(SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID), 0)
+  ) * p.plan_value AS distributed_plan_units,
+
+  SAFE_DIVIDE(
+    SAFE_DIVIDE(
+      CASE WHEN is_production_reason THEN e.total_cycles ELSE NULL END,
+      NULLIF(SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID), 0)
+    ) * p.plan_value,
+    NULLIF(pm.units_per_layer, 0)
+  ) AS distributed_plan_cycles,
+
+  -- enriched причины
+  r.stop_time,
+  r.wait_time,
+  r.production_time,
+  r.auto_time,
+  r.unconfirmed_time,
+  r.qaver_time,
+  r.all_time_reason,
+  r.Stop_time_tech,
+  r.Stop_time_netech,
+  r.Product_change_time,
+  r.Color_change_time,
+  r.Cleaning_time,
+  r.Shift_change_time,
+  r.Boards_time,
+  r.C_Mix_time,
+  r.F_Mix_time,
+  r.Product_eject_time,
+  bd.job_share,
+  bd.bsu_total_weight_t,
+  bd.bsu_distributed_weight_t AS bsu_concreate_weight_distributed,
+  pm.norm_layer_weight * e.total_cycles as total_cycles_weight
+
+FROM reason_data r
+LEFT JOIN erp_data e USING(charge_SID, segment_number)
+LEFT JOIN plan_data p ON e.job_number = p.document_number AND EXTRACT(YEAR FROM e.production_day) = EXTRACT(YEAR FROM p.document_date)
+LEFT JOIN bsu_distributed bd USING(charge_SID, segment_number)
+LEFT JOIN pmg_data pm
+  ON r.nomenclature_name = pm.nomenclature_name
+  AND (
+    pm.thickness IS NULL OR
+    SUBSTR(r.variation_name, 1, LEAST(
+      IF(STRPOS(r.variation_name, ' ') > 0, STRPOS(r.variation_name, ' '), LENGTH(r.variation_name) + 1),
+      IF(STRPOS(r.variation_name, 'ММ') > 0, STRPOS(r.variation_name, 'ММ'), LENGTH(r.variation_name) + 1)
+    ) - 1) = SUBSTR(pm.thickness, 1, LEAST(
+      IF(STRPOS(pm.thickness, ' ') > 0, STRPOS(pm.thickness, ' '), LENGTH(pm.thickness) + 1),
+      IF(STRPOS(pm.thickness, 'ММ') > 0, STRPOS(pm.thickness, 'ММ'), LENGTH(pm.thickness) + 1)
+    ) - 1)
+  )
