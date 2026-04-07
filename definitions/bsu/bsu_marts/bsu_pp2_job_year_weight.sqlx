@@ -1,0 +1,24 @@
+config {
+  type: "table",
+  schema: "gal_bsu_pp2_mart",
+  name: "bsu_pp2_job_year_weight",
+  tags: ["bsu_pp2_job_title", "bsu_pp2_arc_zames", "bsu_pp2_arc_components", "marts"],
+  description: "Март витрина по актуальным данным (SCD2) для Zenith Charge PP2"
+}
+
+select 
+    jt.av_zak,
+    EXTRACT(YEAR FROM jt.createdate) AS year_created,
+    sum(ac.FACTWEIGHT) as total_factweight,
+    min(az.ZAMSTUNLTIME) as dt_bsu_start,
+    max(az.ZAMSTUNLTIME) as dt_bsu_end
+from galery-22579.gal_bsu_pp2.history_bsu_pp2_arc_components ac
+join galery-22579.gal_bsu_pp2.history_bsu_pp2_arc_zames az 
+  on ac.zamid = az.id
+join galery-22579.gal_bsu_pp2.history_bsu_pp2_job_title jt 
+  on az.ZAKASID = jt.orderid
+where jt.RECIPEGROUP<>"Для прогона" 
+  and ac.is_current 
+  and az.is_current 
+  and jt.is_current
+group by jt.av_zak, EXTRACT(YEAR FROM jt.createdate)
