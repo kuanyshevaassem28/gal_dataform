@@ -1,0 +1,61 @@
+config {
+  type: "table",
+  schema: "gal_production_commbined",
+  name: "detailed_downtime_combined_mart"
+}
+ 
+SELECT
+  charge_SID,
+  job_number,
+  segment_number,
+  plant_part_SID,
+  CAST(reason AS STRING) AS reason,
+  sz_reason,
+  dt_start,
+  dt_end,
+  events_count,
+  duration_sec,
+  charge_sid_grouped,
+  is_production_reason,
+  date,
+  name_ru,
+  reason_group,
+  reason_type,
+  comment,
+  site,
+  order_field,
+  norma_val_sec,
+  norm_type,
+  nomenclature_name,
+  variation_name,
+  unit_name,
+  "ПП3" as plant
+FROM  ${ref("detailed_downtime_mart_zenith")} 
+UNION ALL
+SELECT
+  charge_SID,
+  job_number,
+  segment_number,
+  plant_part_SID,
+  CAST(reason AS STRING) AS reason,
+  sz_reason,
+  dt_start,
+  dt_end,
+  events_count,
+  duration_sec,
+  charge_sid_grouped,
+  is_production_reason,
+  date,
+  name_ru,
+  reason_group,
+  reason_type,
+  comment,
+  site,
+  order_field,
+  norma_val_sec,
+  norm_type,
+  nomenclature_name,
+  variation_name,
+  unit_name,
+  "ПП2" as plant
+FROM  ${ref("detailed_downtime_mart")} 
