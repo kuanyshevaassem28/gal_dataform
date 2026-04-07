@@ -1,0 +1,153 @@
+config {
+  type: "view",
+  schema: "gal_unf_marts",
+  name: "productions_mart"
+}
+
+WITH documents AS (
+    SELECT
+        document_number,
+        document_date,
+        EXTRACT(YEAR FROM document_date) AS document_year,
+        owner_name,
+        stock_name,
+        active,
+        manufacturer_name
+    FROM ${ref("history_unf_production_documents")}  
+    WHERE is_current = TRUE AND active = TRUE
+),
+products AS (
+    SELECT
+        document_number,
+        document_date,
+        MAX(CASE WHEN LOWER(variation_name) LIKE '%неконд%' THEN NULL ELSE variation_name END) AS variation_name_main,
+        MAX(CASE WHEN LOWER(variation_name) LIKE '%неконд%' THEN NULL ELSE unit_name END) AS unit_name_main,
+        MAX(CASE WHEN LOWER(variation_name) LIKE '%неконд%' THEN quantity ELSE NULL END) AS quantity_nekond,
+        MAX(CASE WHEN LOWER(variation_name) LIKE '%неконд%' THEN variation_name ELSE NULL END) AS variation_name_nekond,
+        MAX(CASE WHEN LOWER(variation_name) LIKE '%неконд%' THEN NULL ELSE quantity END) AS quantity_main,
+        MAX(nomenclature_name) AS nomenclature_name
+    FROM  ${ref("history_unf_production_products")}  
+    WHERE is_current = TRUE
+    GROUP BY document_number, document_date
+),
+layers AS (
+    SELECT
+        job_wet,
+        extract(year from charge_wet_start) as job_year,
+        ROUND(MIN(weigh_shv), 3) AS min_layer_weight_kg,
+        ROUND(MAX(weigh_shv), 3) AS max_layer_weight_kg,
+        ROUND(AVG(weigh_shv), 3) AS avg_layer_weight_kg,
+        ROUND(APPROX_QUANTILES(weigh_shv, 2)[OFFSET(1)], 3) AS median_layer_weight_kg,
+        count(*) as layers_count,
+        sum(case when weigh_shv = 0 then 1 else 0 end) as layers_0_weight,
+        sum(weigh_shv) as job_wet_total_weight
+    FROM  ${ref("exchange_layer_history")}
+    WHERE is_current = TRUE
+    GROUP BY job_wet,job_year
+),
+pmg_data AS (
+    SELECT
+        manufacturer,
+        nomenclature_name,
+        thickness,
+        ROUND(square_meters_per_pallet / layers_per_pallet, 3) AS units_per_layer,
+        (pallet_gross_weight_kg - 16)/layers_per_pallet AS norm_layer_weight
+    FROM  ${ref("external_packaging_material_registry")}  
+    
+),
+wet_cycles AS (
+    SELECT 
+        job_number,
+        EXTRACT(YEAR FROM production_day) AS year,
+        SUM(total_cycles) AS total_cycles
+    FROM  ${ref("gal_charge_summary_combined_mart")}
+    WHERE plant_part_SID = 101
+    GROUP BY job_number, year
+),
+
+bsu_combined AS (
+    SELECT * from  ${ref("bsu_pp2_job_year_weight")}  
+    union all
+    select * from  ${ref("bsu_pp2_job_year_weight")}
+    ),
+base AS (
+    SELECT
+        d.document_number,
+        d.document_date,
+        d.document_year,
+        d.owner_name,
+        d.stock_name,
+        d.manufacturer_name,
+        d.active,
+        p.unit_name_main,
+        p.nomenclature_name,
+        p.variation_name_main,
+        pm.units_per_layer,
+        wc.total_cycles as total_wet_cycles,
+        COALESCE(p.quantity_main, 0) AS unf_main_units,
+        COALESCE(ROUND(p.quantity_main / pm.units_per_layer, 3), 0) AS unf_main_cycles,
+        COALESCE(p.quantity_nekond, 0) AS unf_nekond_units,
+        COALESCE(ROUND(p.quantity_nekond / pm.units_per_layer, 3), 0) AS unf_nekond_cycles,
+        p.variation_name_nekond,
+        COALESCE(pf.number_of_reset_cycles, 0) AS number_of_reset_cycles,
+        bsu.total_factweight / 1000.0 AS total_concrete_factweight_kg,
+        pm.norm_layer_weight,
+        COALESCE(ROUND(p.quantity_main / pm.units_per_layer, 3), 0) * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight) AS unf_main_weight_kg,
+        COALESCE(ROUND(p.quantity_nekond / pm.units_per_layer, 3), 0) * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight) AS unf_nekond_weight_kg,
+        COALESCE(wc.total_cycles * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight), 0) AS hess_wet_total_weight_kg,
+        bsu.total_factweight / 1000.0 - COALESCE(wc.total_cycles * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight), 0) AS bsu_waste_weight_kg,
+        COALESCE(wc.total_cycles * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight), 0)
+        - COALESCE(ROUND(p.quantity_main / pm.units_per_layer, 3), 0) * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight)
+        - COALESCE(ROUND(p.quantity_nekond / pm.units_per_layer, 3), 0) * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight) AS wet_waste_weight_kg,
+        bsu.total_factweight / 1000.0 
+        - COALESCE(ROUND(p.quantity_main / pm.units_per_layer, 3), 0) * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight)
+        - COALESCE(ROUND(p.quantity_nekond / pm.units_per_layer, 3), 0) * coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight) as wet_bsu_waste_weight_kg,
+        l.layers_count,
+        l.layers_0_weight,
+        l.min_layer_weight_kg,
+        l.max_layer_weight_kg,
+        l.avg_layer_weight_kg,
+        l.median_layer_weight_kg,
+        l.job_wet_total_weight,
+        coalesce(l.avg_layer_weight_kg, pm.norm_layer_weight) as avaliable_layer_weight
+
+    FROM documents d
+    LEFT JOIN products p
+        ON d.document_number = p.document_number
+        AND d.document_date = p.document_date
+    LEFT JOIN pmg_data pm
+        ON p.nomenclature_name = pm.nomenclature_name
+        AND pm.manufacturer = d.manufacturer_name
+        AND (
+            pm.thickness IS NULL OR
+            SUBSTR(p.variation_name_main, 1, LEAST(
+                IF(STRPOS(p.variation_name_main, ' ') > 0, STRPOS(p.variation_name_main, ' '), LENGTH(p.variation_name_main) + 1),
+                IF(STRPOS(p.variation_name_main, 'ММ') > 0, STRPOS(p.variation_name_main, 'ММ'), LENGTH(p.variation_name_main) + 1)
+            ) - 1) = SUBSTR(pm.thickness, 1, LEAST(
+                IF(STRPOS(pm.thickness, ' ') > 0, STRPOS(pm.thickness, ' '), LENGTH(pm.thickness) + 1),
+                IF(STRPOS(pm.thickness, 'ММ') > 0, STRPOS(pm.thickness, 'ММ'), LENGTH(pm.thickness) + 1)
+            ) - 1)
+        )
+    LEFT JOIN `galery-22579.gal_unf.history_unf_production_forms` pf 
+        ON d.document_number = pf.document_number
+        AND d.document_year = EXTRACT(YEAR FROM pf.document_date)
+        AND pf.is_current = TRUE
+    LEFT JOIN bsu_combined bsu
+        ON d.document_number = bsu.av_zak
+        AND d.document_year = bsu.year_created
+    LEFT JOIN wet_cycles wc
+        ON d.document_number = wc.job_number
+        AND d.document_year = wc.year
+    LEFT JOIN layers l
+        ON d.document_number = l.job_wet
+        AND d.document_year = l.job_year
+    WHERE variation_name_main IS NOT NULL AND variation_name_main <> ""
+)
+
+SELECT *,
+    SAFE_DIVIDE(wet_waste_weight_kg, total_concrete_factweight_kg) AS wet_waste_pct,
+    SAFE_DIVIDE(bsu_waste_weight_kg, total_concrete_factweight_kg) AS bsu_waste_pct,
+    SAFE_DIVIDE(wet_bsu_waste_weight_kg, total_concrete_factweight_kg) AS wet_bsu_waste_weight_pct,
+    SAFE_DIVIDE(unf_nekond_weight_kg, total_concrete_factweight_kg) AS nekond_pct,
+    SAFE_DIVIDE(unf_main_weight_kg, total_concrete_factweight_kg) AS main_pct
+FROM base
