@@ -1,0 +1,172 @@
+config {
+  type: "table",
+  schema: "gal_hess_marts",
+  name: "detailed_downtime_mart"
+}
+
+
+WITH
+--Обрезаем корявые партии пересекающие 8 и 20
+trimmed_single_reasons AS (
+  SELECT
+    base.*,
+
+    -- контрольные точки в DATETIME
+    DATETIME(DATE(base.dt_start), TIME "08:00:00") AS t_08,
+    DATETIME(DATE(base.dt_start), TIME "20:00:00") AS t_20,
+
+    -- trimmed dt_start
+    CASE
+      -- логика для 08:00
+      WHEN base.dt_start < DATETIME(DATE(base.dt_start), TIME "08:00:00")
+           AND base.dt_end > DATETIME(DATE(base.dt_start), TIME "08:00:00")
+           AND DATETIME_DIFF(DATETIME(DATE(base.dt_start), TIME "08:00:00"), base.dt_start, SECOND)
+               < DATETIME_DIFF(base.dt_end, DATETIME(DATE(base.dt_start), TIME "08:00:00"), SECOND)
+        THEN DATETIME(DATE(base.dt_start), TIME "08:00:00")
+      
+      -- логика для 20:00
+      WHEN base.dt_start < DATETIME(DATE(base.dt_start), TIME "20:00:00")
+           AND base.dt_end > DATETIME(DATE(base.dt_start), TIME "20:00:00")
+           AND DATETIME_DIFF(DATETIME(DATE(base.dt_start), TIME "20:00:00"), base.dt_start, SECOND)
+               < DATETIME_DIFF(base.dt_end, DATETIME(DATE(base.dt_start), TIME "20:00:00"), SECOND)
+        THEN DATETIME(DATE(base.dt_start), TIME "20:00:00")
+      
+      ELSE base.dt_start
+    END AS dt_start_trimmed,
+
+    -- trimmed dt_end
+    CASE
+      -- логика для 08:00
+      WHEN base.dt_start < DATETIME(DATE(base.dt_start), TIME "08:00:00")
+           AND base.dt_end > DATETIME(DATE(base.dt_start), TIME "08:00:00")
+           AND DATETIME_DIFF(base.dt_end, DATETIME(DATE(base.dt_start), TIME "08:00:00"), SECOND)
+               <= DATETIME_DIFF(DATETIME(DATE(base.dt_start), TIME "08:00:00"), base.dt_start, SECOND)
+        THEN DATETIME(DATE(base.dt_start), TIME "08:00:00")
+      
+      -- логика для 20:00
+      WHEN base.dt_start < DATETIME(DATE(base.dt_start), TIME "20:00:00")
+           AND base.dt_end > DATETIME(DATE(base.dt_start), TIME "20:00:00")
+           AND DATETIME_DIFF(base.dt_end, DATETIME(DATE(base.dt_start), TIME "20:00:00"), SECOND)
+               <= DATETIME_DIFF(DATETIME(DATE(base.dt_start), TIME "20:00:00"), base.dt_start, SECOND)
+        THEN DATETIME(DATE(base.dt_start), TIME "20:00:00")
+      
+      ELSE base.dt_end
+    END AS dt_end_trimmed
+
+  
+  FROM ${ref("exchange_single_reason_with_segments_materialized")} base
+  WHERE  base.dt_start IS NOT NULL
+),
+
+
+-- Агрегированные данные ERP с рассчитанным duration_sec и количеством событий
+aggregated_erp AS (
+  SELECT
+    base.charge_SID,
+    base.segment_number,
+    NULLIF(COALESCE(NULLIF(charge.job_number, ''), NULLIF(base.job_number, '')), '') AS job_number,
+    base.plant_part_SID,
+    base.reason,
+    base.sz_reason,
+    MIN(base.dt_start_trimmed) AS dt_start,
+    MAX(base.dt_end_trimmed) AS dt_end,
+    COUNT(*) AS events_count,
+    SUM(
+      CASE 
+        WHEN base.dt_start_trimmed IS NOT NULL AND base.dt_end_trimmed IS NOT NULL
+          THEN TIMESTAMP_DIFF(base.dt_end_trimmed, base.dt_start_trimmed, SECOND)
+        ELSE 0
+      END
+    ) AS duration_sec
+  FROM trimmed_single_reasons base
+  LEFT JOIN (
+    SELECT charge_SID, segment_number, job_number
+    FROM ${ref("normalized_charges3_materialized")} 
+    WHERE is_current = TRUE
+  ) charge
+    ON base.charge_SID = charge.charge_SID and base.segment_number = charge.segment_number
+  GROUP BY
+    base.charge_SID, base.segment_number, job_number, base.plant_part_SID, base.reason, base.sz_reason
+),
+
+
+-- enriched 1С-продукты по job_number и году
+unf_products AS (
+  SELECT *
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY document_number, EXTRACT(YEAR FROM document_date)
+        ORDER BY quantity DESC
+      ) AS rn
+    FROM ${ref("history_unf_production_products")}
+    WHERE is_current = TRUE
+  )
+  WHERE rn = 1
+)
+
+-- Финальный SELECT с обогащением
+SELECT
+  erp.charge_SID,
+  erp.job_number,
+  erp.segment_number,
+  erp.plant_part_SID,
+  erp.reason,
+  erp.sz_reason,
+
+  -- Временные интервалы и количество
+  erp.dt_start,
+  erp.dt_end,
+  erp.events_count,
+  erp.duration_sec,
+
+  -- Группировка идентификатора партии
+  CASE
+    WHEN LOWER(reasons.group) = 'stop' AND LOWER(reasons.type) = 'технологический' THEN 'Технологические остановки'
+    WHEN LOWER(reasons.group) = 'stop' AND LOWER(reasons.type) = 'нетехнологический' THEN 'Нетехнологические остановки'
+    WHEN erp.charge_SID IS NOT NULL THEN CAST(erp.charge_SID AS STRING)
+    ELSE NULL
+  END AS charge_sid_grouped,
+  CASE
+    WHEN LOWER(reasons.group) = 'stop' AND LOWER(reasons.type) = 'технологический' THEN False
+    WHEN LOWER(reasons.group) = 'stop' AND LOWER(reasons.type) = 'нетехнологический' THEN False
+    WHEN erp.charge_SID IS NOT NULL THEN True
+    ELSE NULL
+  END AS is_production_reason, --Поле которое проверяет что причина остановок относится к производственным
+  -- Смещённая дата (по 08:00)
+  DATE(
+    CASE
+      WHEN TIME(erp.dt_start) < TIME "08:00:00"
+        THEN DATETIME_SUB(erp.dt_start, INTERVAL 1 DAY)
+      ELSE erp.dt_start
+    END
+  ) AS date,
+
+  -- enriched fields
+  reasons.name_ru,
+  reasons.group AS reason_group,
+  reasons.type AS reason_type,
+  reasons.comment,
+  reasons.site,
+  reasons.order_field,
+  reasons.norma_val_sec,
+  reasons.norm_type,
+
+  -- enriched product info from 1С
+  pp.nomenclature_name,
+  pp.variation_name,
+  pp.unit_name
+
+FROM aggregated_erp erp
+LEFT JOIN ${ref("external_hess_reasons_enriched")} reasons
+  ON LOWER(erp.sz_reason) = LOWER(reasons.name)
+     AND (
+       (erp.reason = 60129542144 AND LOWER(reasons.group) = 'stop')  
+       OR (erp.reason = 2097153 AND LOWER(reasons.group) = 'wait')
+       OR (erp.reason NOT IN (60129542144, 2097153))
+     )
+LEFT JOIN unf_products pp
+  ON erp.job_number = pp.document_number
+     AND EXTRACT(YEAR FROM erp.dt_start) = EXTRACT(YEAR FROM pp.document_date)
+     AND LOWER(reasons.group) <> 'stop'
