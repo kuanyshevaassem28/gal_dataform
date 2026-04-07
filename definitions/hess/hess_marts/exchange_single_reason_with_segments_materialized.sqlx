@@ -1,0 +1,8 @@
+config {
+  type: "table",
+  schema: "gal_hess_marts",
+  name: "exchange_single_reason_with_segments_materialized"
+}
+
+SELECT *
+FROM ${ref("exchange_single_reason_with_segments")}
