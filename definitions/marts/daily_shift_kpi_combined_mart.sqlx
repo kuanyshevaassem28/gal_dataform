@@ -1,0 +1,9 @@
+config {
+  type: "table",
+  schema: "gal_production_commbined",
+  name: "daily_shift_kpi_combined_mart"
+}
+ 
+select *,"ПП2" as plant from  ${ref("daily_shift_kpi_mart_zenith")}  
+union all
+select *,"ПП3" as plant from  ${ref("daily_shift_kpi_mart")} 
