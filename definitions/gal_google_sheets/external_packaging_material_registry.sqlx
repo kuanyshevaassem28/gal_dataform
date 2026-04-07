@@ -1,0 +1,5 @@
+config {
+  type: "declaration",
+  schema: "gal_google_sheets",
+  name: "external_packaging_material_registry"
+}
