@@ -1,0 +1,9 @@
+config {
+  type: "table",
+  schema: "gal_hess_marts",
+  name: "normalized_charges3_materialized"
+}
+
+SELECT *
+FROM ${ref("normalized_charges3")}
+
