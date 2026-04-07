@@ -1,0 +1,67 @@
+config {
+  type: "table",
+  schema: "gal_production_commbined",
+  name: "sources_3_timelines"
+}
+ 
+WITH
+  priv_types AS (
+  SELECT
+    PARSE_DATETIME('%Y-%m-%d %H:%M:%S.000', t.Measurement_Time) AS Measurement_Time_Parsed,
+    CONCAT(t.Recipe_Name, ' ', coalesce(t.Comment,"")) AS Recipe_Comment_Combined,
+    t.ui_Measurement_ID
+  FROM
+    `galery-22579.gal_rw.history_measurements` AS t
+  WHERE
+    t.Site_ID = 2 and
+    t.Recipe_Name IS NOT NULL    
+    AND t.Measurement_Time IS NOT NULL ),
+  RankedMeasurements AS (
+  SELECT
+    Measurement_Time_Parsed,
+    Recipe_Comment_Combined,
+    ui_Measurement_ID,
+    LAG(Recipe_Comment_Combined) OVER (ORDER BY Measurement_Time_Parsed, ui_Measurement_ID) AS Prev_Recipe_Comment_Combined
+  FROM
+    `priv_types` ),
+  GroupedMeasurements AS (
+  SELECT
+    Measurement_Time_Parsed,
+    Recipe_Comment_Combined,
+    SUM(
+      CASE
+        WHEN Recipe_Comment_Combined = Prev_Recipe_Comment_Combined THEN 0
+        ELSE 1
+    END
+      ) OVER (ORDER BY Measurement_Time_Parsed, ui_Measurement_ID) AS GroupID
+  FROM
+    `RankedMeasurements` )
+SELECT
+  Recipe_Comment_Combined AS recipe_name,
+  MIN(Measurement_Time_Parsed) AS date,
+  -- Changed to DATETIME as requested
+  MIN(Measurement_Time_Parsed) AS bde_started,
+  MAX(Measurement_Time_Parsed) AS bde_stopped,
+  "RW" AS source
+FROM
+  `GroupedMeasurements`
+GROUP BY
+  Recipe_Comment_Combined,
+  GroupID
+union all
+SELECT recipe_name, date(bde_started) as date, bde_started, bde_stopped, "zenith" as source  
+FROM  ${ref("zenith_charge_pp2_marts")}  
+union all 
+SELECT
+      jt.AV_ZAK as recipe_name,
+      date(CAST(MIN(az.ZAMSTUNLTIME) AS DATETIME)) as date,
+      CAST(MIN(az.ZAMSTUNLTIME) AS DATETIME) AS bde_started,
+      CAST(MAX(az.ZAMSTUNLTIME) AS DATETIME) AS bde_stopped,
+      "BSU" as source      
+    FROM
+      `galery-22579.gal_bsu_pp2.history_bsu_pp2_arc_zames` AS az
+    left JOIN
+      `galery-22579.gal_bsu_pp2.history_bsu_pp2_job_title` AS jt
+    ON
+      az.ZAKASID = jt.ORDERID
+      group by jt.AV_ZAK
