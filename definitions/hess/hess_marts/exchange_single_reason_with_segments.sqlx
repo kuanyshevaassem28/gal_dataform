@@ -1,0 +1,65 @@
+config {
+  type: "view",
+  schema: "gal_hess_marts",
+  name: "exchange_single_reason_with_segments"
+}
+
+WITH reasons AS (
+  SELECT *
+  FROM `galery-22579.gal_hess_statistic.Exchange_charge_single_reason_erp_history`
+  WHERE is_current = TRUE
+    AND dt_start IS NOT NULL
+    AND charge_SID IS NOT NULL
+),
+
+segments AS (
+  SELECT
+    charge_sid,
+    segment_number,
+    dt_start AS segment_start,
+    dt_end AS segment_end
+  FROM `galery-22579.gal_hess_marts.normalized_charges3`
+),
+
+matched_segments AS (
+  SELECT
+    r.*,
+    s.segment_number,
+    s.segment_start,
+    TIMESTAMP_DIFF(
+      LEAST(IFNULL(TIMESTAMP(r.dt_end), s.segment_end), s.segment_end),
+      GREATEST(TIMESTAMP(r.dt_start), s.segment_start),
+      SECOND
+    ) AS overlap_sec
+  FROM reasons r
+  JOIN segments s
+    ON r.charge_SID = s.charge_sid
+   AND TIMESTAMP(r.dt_start) <= s.segment_end
+   AND (r.dt_end IS NULL OR TIMESTAMP(r.dt_end) >= s.segment_start)
+),
+
+ranked_matches AS (
+  SELECT *,
+    ROW_NUMBER() OVER (
+      PARTITION BY ID 
+      ORDER BY overlap_sec DESC, segment_start
+    ) AS rnk
+  FROM matched_segments
+)
+
+SELECT
+  ID,
+  charge_SID,
+  job_number,
+  reason_SID,
+  plant_part_SID,
+  reason,
+  sz_reason,
+  dt_start,
+  dt_end,
+  valid_from,
+  valid_to,
+  is_current,
+  segment_number
+FROM ranked_matches
+WHERE rnk = 1
