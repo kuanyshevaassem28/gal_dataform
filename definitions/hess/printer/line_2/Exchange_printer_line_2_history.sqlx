@@ -50,7 +50,7 @@ WITH s AS (
     SAFE_CAST(pallet_SID AS INT64) AS pallet_SID,
     SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID
 
-  FROM ${ref("external_staging_hess_printer")}
+  FROM ${ref("external_staging_hess_printer_line_2")}
 
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY SAFE_CAST(ID AS INT64)
