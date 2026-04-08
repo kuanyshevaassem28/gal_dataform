@@ -61,52 +61,61 @@ ${when(incremental(), `
 
 WITH S_SRC AS (
   SELECT
-    CAST(ID AS INT64)                          AS ID,
-    CAST(layer_SID AS INT64)                   AS layer_SID,
-    CAST(plant AS STRING)                      AS plant,
-    CAST(plant_part_wet AS STRING)             AS plant_part_wet,
-    CAST(plant_part_dry AS STRING)             AS plant_part_dry,
-    CAST(job_wet AS STRING)                    AS job_wet,
-    CAST(product_name_wet AS STRING)           AS product_name_wet,
-    CAST(product_number_wet AS STRING)         AS product_number_wet,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_wet_start) AS charge_wet_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_wet_end)   AS charge_wet_end,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_wet_start)  AS shift_wet_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_wet_end)    AS shift_wet_end,
-    CAST(shift_wet_number AS INT64)            AS shift_wet_number,
-    CAST(charge_SID_wet AS INT64)              AS charge_SID_wet,
-    CAST(job_dry AS STRING)                    AS job_dry,
-    CAST(product_name_dry AS STRING)           AS product_name_dry,
-    CAST(product_number_dry AS STRING)         AS product_number_dry,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_dry_start) AS charge_dry_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_dry_end)   AS charge_dry_end,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_dry_start)  AS shift_dry_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_dry_end)    AS shift_dry_end,
-    CAST(shift_dry_number AS INT64)            AS shift_dry_number,
-    CAST(charge_SID_dry AS INT64)              AS charge_SID_dry,
-    CAST(quality AS INT64)                     AS quality,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)        AS timestamp,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)       AS to_chamber,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)     AS from_chamber,
+    CAST(ID AS INT64) AS ID,
+    CAST(layer_SID AS INT64) AS layer_SID,
+    CAST(plant AS STRING) AS plant,
+    CAST(plant_part_wet AS STRING) AS plant_part_wet,
+    CAST(plant_part_dry AS STRING) AS plant_part_dry,
+    CAST(job_wet AS STRING) AS job_wet,
+    CAST(product_name_wet AS STRING) AS product_name_wet,
+    CAST(product_number_wet AS STRING) AS product_number_wet,
 
-    -- FIX: dry_time должен быть NUMERIC (а не FLOAT64), чтобы совпасть со схемой history
-    SAFE_CAST(dry_time AS NUMERIC)             AS dry_time,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(charge_wet_start AS STRING)) AS charge_wet_start,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(charge_wet_end AS STRING)) AS charge_wet_end,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(shift_wet_start AS STRING)) AS shift_wet_start,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(shift_wet_end AS STRING)) AS shift_wet_end,
 
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', stacked)          AS stacked,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', modified)         AS modified,
-    CAST(previb_time AS FLOAT64)               AS previb_time,
-    CAST(mainvib_time AS FLOAT64)              AS mainvib_time,
-    CAST(previb_speed AS FLOAT64)              AS previb_speed,
-    CAST(mainvib_speed AS FLOAT64)             AS mainvib_speed,
-    CAST(previb_angle AS FLOAT64)              AS previb_angle,
-    CAST(mainvib_angle AS FLOAT64)             AS mainvib_angle,
-    CAST(tamphead_preasure AS FLOAT64)         AS tamphead_preasure,
-    CAST(height AS FLOAT64)                    AS height,
-    CAST(height_avg_shv AS FLOAT64)            AS height_avg_shv,
-    CAST(height_1_shv AS FLOAT64)              AS height_1_shv,
-    CAST(height_2_shv AS FLOAT64)              AS height_2_shv,
-    CAST(height_3_shv AS FLOAT64)              AS height_3_shv,
-    CAST(weigh_shv AS FLOAT64)                 AS weigh_shv
+    CAST(shift_wet_number AS INT64) AS shift_wet_number,
+    CAST(charge_SID_wet AS INT64) AS charge_SID_wet,
+
+    CAST(job_dry AS STRING) AS job_dry,
+    CAST(product_name_dry AS STRING) AS product_name_dry,
+    CAST(product_number_dry AS STRING) AS product_number_dry,
+
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(charge_dry_start AS STRING)) AS charge_dry_start,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(charge_dry_end AS STRING)) AS charge_dry_end,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(shift_dry_start AS STRING)) AS shift_dry_start,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(shift_dry_end AS STRING)) AS shift_dry_end,
+
+    CAST(shift_dry_number AS INT64) AS shift_dry_number,
+
+    SAFE_CAST(charge_SID_dry AS INT64) AS charge_SID_dry,
+
+    CAST(quality AS INT64) AS quality,
+
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)) AS timestamp,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(to_chamber AS STRING)) AS to_chamber,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(from_chamber AS STRING)) AS from_chamber,
+
+    SAFE_CAST(dry_time AS NUMERIC) AS dry_time,
+
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(stacked AS STRING)) AS stacked,
+    SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(modified AS STRING)) AS modified,
+
+    CAST(previb_time AS FLOAT64) AS previb_time,
+    CAST(mainvib_time AS FLOAT64) AS mainvib_time,
+    CAST(previb_speed AS FLOAT64) AS previb_speed,
+    CAST(mainvib_speed AS FLOAT64) AS mainvib_speed,
+    CAST(previb_angle AS FLOAT64) AS previb_angle,
+    CAST(mainvib_angle AS FLOAT64) AS mainvib_angle,
+    CAST(tamphead_preasure AS FLOAT64) AS tamphead_preasure,
+    CAST(height AS FLOAT64) AS height,
+    CAST(height_avg_shv AS FLOAT64) AS height_avg_shv,
+    CAST(height_1_shv AS FLOAT64) AS height_1_shv,
+    CAST(height_2_shv AS FLOAT64) AS height_2_shv,
+    CAST(height_3_shv AS FLOAT64) AS height_3_shv,
+    CAST(weigh_shv AS FLOAT64) AS weigh_shv
+
   FROM ${ref("external_staging_hess_layer")}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY layer_SID ORDER BY ID DESC) = 1
 ),
