@@ -15,7 +15,8 @@ config {
 
     valid_from:        "Начало действия версии (SCD2)",
     valid_to:          "Конец действия версии (SCD2)",
-    is_current:        "Флаг актуальной версии"
+    is_current:        "Флаг актуальной версии",
+    line: "Производственная линия (Линия 1)"
   }
 }
  
@@ -76,7 +77,8 @@ SELECT
   RecipeName,
   CURRENT_TIMESTAMP        AS valid_from,
   CAST(NULL AS TIMESTAMP)  AS valid_to,
-  TRUE                     AS is_current
+  TRUE                     AS is_current,
+  "Линия 1" AS line
 FROM NEW_OR_CHANGED
 
 UNION ALL
@@ -89,7 +91,8 @@ SELECT
   RecipeName,
   valid_from,
   CURRENT_TIMESTAMP      AS valid_to,
-  FALSE                  AS is_current
+  FALSE                  AS is_current,
+  "Линия 1" AS line
 FROM CHANGED_OR_DELETED
 
 `, ` 
@@ -112,6 +115,7 @@ SELECT
   RecipeName,
   CURRENT_TIMESTAMP       AS valid_from,
   CAST(NULL AS TIMESTAMP) AS valid_to,
-  TRUE                    AS is_current
+  TRUE                    AS is_current,
+  "Линия 1" AS line
 FROM S_SRC
 `)}
