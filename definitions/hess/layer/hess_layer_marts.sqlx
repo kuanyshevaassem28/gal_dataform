@@ -5,11 +5,11 @@ config {
 }
 
 SELECT *
-FROM `galery-22579.gal_hess_statistic.exchange_layer_history`
+FROM  ${ref("exchange_layer_history")} 
 WHERE is_current = TRUE
 
 UNION ALL
 
 SELECT *
-FROM `galery-22579.gal_hess_statistic.exchange_layer_line_2_history`
+FROM  ${ref("exchange_layer_line_2_history")} 
 WHERE is_current = TRUE
