@@ -1,0 +1,122 @@
+config {
+  type: "incremental",
+  schema: "gal_hess_statistic",
+  name: "Exchange_charge_reason_erp_line_2_history",
+  tags: ["hess_reason_line_2", "hess", "erp", "reason", "history", "scd2"],
+  description: "HESS — SCD2 история reason_erp. Типы под target: charge_SID=INT64, plant_part_SID=INT64, reason=INT64, sz_reason=STRING, duration=FLOAT64, valid_from/valid_to=DATETIME.",
+  uniqueKey: ["ID", "valid_from"],
+  columns: {
+    ID:             "Идентификатор записи (INT64)",
+    charge_SID:     "SID charge (INT64)",
+    job_number:     "Номер job (STRING)",
+    plant_part_SID: "SID участка/части завода (INT64)",
+    reason:         "Причина (INT64)",
+    sz_reason:      "SZ причина (STRING)",
+    duration:       "Длительность (FLOAT64)",
+    production_day: "Производственный день (DATETIME)",
+    valid_from:     "Начало действия версии (DATETIME)",
+    valid_to:       "Конец действия версии (DATETIME)",
+    is_current:     "Признак актуальной версии",
+    line: "Производственная линия (Линия 2)"
+  }
+}
+
+pre_operations {
+  ${when(incremental(), `
+    MERGE ${self()} H
+    USING (
+      SELECT
+        SAFE_CAST(ID AS INT64) AS ID,
+        SAFE_CAST(charge_SID AS INT64) AS charge_SID,
+        SAFE_CAST(job_number AS STRING) AS job_number,
+        SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID,
+        SAFE_CAST(reason AS INT64) AS reason,
+
+        -- target: STRING
+        SAFE_CAST(sz_reason AS STRING) AS sz_reason,
+
+        -- target: FLOAT64
+        SAFE_CAST(duration AS FLOAT64) AS duration,
+
+        SAFE_CAST(production_day AS DATETIME) AS production_day
+      FROM ${ref("external_staging_hess_reason_erp_line_2")}
+      QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY SAFE_CAST(ID AS INT64)
+        ORDER BY SAFE_CAST(ID AS INT64) DESC
+      ) = 1
+    ) S
+    ON H.ID = S.ID
+   AND H.is_current = TRUE
+
+    WHEN MATCHED AND (
+         SAFE_CAST(H.charge_SID     AS STRING) IS DISTINCT FROM SAFE_CAST(S.charge_SID     AS STRING)
+      OR SAFE_CAST(H.job_number     AS STRING) IS DISTINCT FROM SAFE_CAST(S.job_number     AS STRING)
+      OR SAFE_CAST(H.plant_part_SID AS STRING) IS DISTINCT FROM SAFE_CAST(S.plant_part_SID AS STRING)
+      OR SAFE_CAST(H.reason         AS STRING) IS DISTINCT FROM SAFE_CAST(S.reason         AS STRING)
+      OR SAFE_CAST(H.sz_reason      AS STRING) IS DISTINCT FROM SAFE_CAST(S.sz_reason      AS STRING)
+      OR SAFE_CAST(H.duration       AS STRING) IS DISTINCT FROM SAFE_CAST(S.duration       AS STRING)
+      OR SAFE_CAST(H.production_day AS STRING) IS DISTINCT FROM SAFE_CAST(S.production_day AS STRING)
+    )
+    THEN UPDATE SET
+      H.valid_to   = CURRENT_DATETIME('Asia/Almaty'),
+      H.is_current = FALSE
+
+    WHEN NOT MATCHED BY SOURCE
+     AND H.is_current = TRUE
+    THEN UPDATE SET
+      H.valid_to   = CURRENT_DATETIME('Asia/Almaty'),
+      H.is_current = FALSE;
+  `, ``)}
+}
+
+WITH S_SRC AS (
+  SELECT
+    SAFE_CAST(ID AS INT64) AS ID,
+    SAFE_CAST(charge_SID AS INT64) AS charge_SID,
+    SAFE_CAST(job_number AS STRING) AS job_number,
+    SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID,
+    SAFE_CAST(reason AS INT64) AS reason,
+    SAFE_CAST(sz_reason AS STRING) AS sz_reason,
+    SAFE_CAST(duration AS FLOAT64) AS duration,
+    SAFE_CAST(production_day AS DATETIME) AS production_day
+  FROM ${ref("external_staging_hess_reason_erp_line_2")}
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY SAFE_CAST(ID AS INT64)
+    ORDER BY SAFE_CAST(ID AS INT64) DESC
+  ) = 1
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S_SRC s
+  ${when(incremental(), `
+    LEFT JOIN ${self()} h
+      ON h.ID = s.ID
+     AND h.is_current = TRUE
+    WHERE h.ID IS NULL
+       OR (
+            SAFE_CAST(h.charge_SID     AS STRING) IS DISTINCT FROM SAFE_CAST(s.charge_SID     AS STRING)
+         OR SAFE_CAST(h.job_number     AS STRING) IS DISTINCT FROM SAFE_CAST(s.job_number     AS STRING)
+         OR SAFE_CAST(h.plant_part_SID AS STRING) IS DISTINCT FROM SAFE_CAST(s.plant_part_SID AS STRING)
+         OR SAFE_CAST(h.reason         AS STRING) IS DISTINCT FROM SAFE_CAST(s.reason         AS STRING)
+         OR SAFE_CAST(h.sz_reason      AS STRING) IS DISTINCT FROM SAFE_CAST(s.sz_reason      AS STRING)
+         OR SAFE_CAST(h.duration       AS STRING) IS DISTINCT FROM SAFE_CAST(s.duration       AS STRING)
+         OR SAFE_CAST(h.production_day AS STRING) IS DISTINCT FROM SAFE_CAST(s.production_day AS STRING)
+       )
+  `, ``)}
+)
+
+SELECT
+  s.ID,
+  s.charge_SID,
+  s.job_number,
+  s.plant_part_SID,
+  s.reason,
+  s.sz_reason,
+  s.duration,
+  s.production_day,
+  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
+  CAST(NULL AS DATETIME)          AS valid_to,
+  TRUE                            AS is_current,
+  "Линия 2" AS line
+FROM NEW_OR_CHANGED s
