@@ -41,7 +41,7 @@ layers AS (
         count(*) as layers_count,
         sum(case when weigh_shv = 0 then 1 else 0 end) as layers_0_weight,
         sum(weigh_shv) as job_wet_total_weight
-    FROM  ${ref("exchange_layer_history")}
+    FROM  ${ref("hess_layer_marts")}
     WHERE is_current = TRUE
     GROUP BY job_wet,job_year
 ),
