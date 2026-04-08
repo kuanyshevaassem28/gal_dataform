@@ -30,7 +30,8 @@ config {
     wet_waste_pct: "Процент влажных отходов",
     bsu_waste_pct: "Процент отходов БСУ",
     nekond_pct: "Процент некондиции",
-    main_pct: "Основной процент"
+    main_pct: "Основной процент",
+    line: "Производственная линия (Линия 1)"
   }
 
 }
@@ -82,6 +83,7 @@ select
   t1.valid_from,
   t1.valid_to,
   t1.is_current,
+  t1.line,
 
   t2.document_number,
   t2.document_date,
