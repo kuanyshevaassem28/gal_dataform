@@ -1,0 +1,143 @@
+config {
+  type: "incremental",
+  schema: "gal_hess_statistic",
+  name: "Exchange_job_line_2_history",
+  tags: ["hess_job", "hess", "job", "history", "scd2"],
+  description: "HESS — SCD2-история по job (ID + job_number). Одна актуальная запись на связку ID+job_number.",
+  uniqueKey: ["ID", "job_number", "valid_from"],
+
+  columns: {
+    ID:             "ID строки job",
+    dt_timestamp:   "Временная метка события (TIMESTAMP)",
+    job_number:     "Номер job",
+    Planning_date:  "Планируемая дата",
+    Product_name:   "Наименование продукта",
+    Product_number: "Номер продукта",
+    count:          "Количество",
+    valid_from:     "Начало действия версии записи",
+    valid_to:       "Конец действия версии записи",
+    is_current:     "Флаг актуальной версии (TRUE — текущая)",
+    line: "Производственная линия (Линия 2)"
+  }
+}
+
+
+${when(incremental(), `
+  
+WITH S_SRC AS (
+  SELECT
+    ID,
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_timestamp) AS dt_timestamp,
+    job_number,
+    Planning_date,
+    Product_name,
+    Product_number,
+    \`count\`
+  FROM ${ref("external_staging_hess_job_line_2")}
+),
+ 
+H_CUR AS (
+  SELECT
+    ID,
+    dt_timestamp,
+    job_number,
+    Planning_date,
+    Product_name,
+    Product_number,
+    \`count\`,
+    valid_from
+  FROM ${self()}
+  WHERE is_current = TRUE
+),
+
+NEW_OR_CHANGED AS (
+  SELECT s.*
+  FROM S_SRC s
+  LEFT JOIN H_CUR h
+    ON h.ID = s.ID
+   AND h.job_number = s.job_number
+  WHERE
+    h.ID IS NULL  -- новая запись
+    OR (
+      h.dt_timestamp   IS DISTINCT FROM s.dt_timestamp   OR
+      h.Planning_date  IS DISTINCT FROM s.Planning_date  OR
+      h.Product_name   IS DISTINCT FROM s.Product_name   OR
+      h.Product_number IS DISTINCT FROM s.Product_number OR
+      h.\`count\`      IS DISTINCT FROM s.\`count\`
+    )
+),
+ 
+CHANGED_KEYS AS (
+  SELECT DISTINCT h.ID, h.job_number, h.valid_from
+  FROM ${self()} h
+  JOIN NEW_OR_CHANGED s
+    ON h.ID         = s.ID
+   AND h.job_number = s.job_number
+  WHERE h.is_current = TRUE
+)
+ 
+SELECT
+  n.ID,
+  n.dt_timestamp,
+  n.job_number,
+  n.Planning_date,
+  n.Product_name,
+  n.Product_number,
+  n.\`count\`,
+  CURRENT_TIMESTAMP() AS valid_from,
+  CAST(NULL AS TIMESTAMP) AS valid_to,
+  TRUE AS is_current,
+  "Линия 2" AS line
+FROM NEW_OR_CHANGED n
+
+UNION ALL
+
+SELECT
+  h.ID,
+  h.dt_timestamp,
+  h.job_number,
+  h.Planning_date,
+  h.Product_name,
+  h.Product_number,
+  h.\`count\`,
+  h.valid_from,
+  CURRENT_TIMESTAMP() AS valid_to,
+  FALSE AS is_current,
+  "Линия 2" AS line
+FROM ${self()} h
+JOIN CHANGED_KEYS ck
+  ON h.ID         = ck.ID
+ AND h.job_number = ck.job_number
+ AND h.valid_from = ck.valid_from
+WHERE h.is_current = TRUE
+
+`, ` 
+
+WITH S_SRC AS (
+  SELECT
+    ID,
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_timestamp) AS dt_timestamp,
+    job_number,
+    Planning_date,
+    Product_name,
+    Product_number,
+    \`count\`
+  FROM ${ref("external_staging_hess_job_line_2")}
+)
+
+SELECT
+  ID,
+  dt_timestamp,
+  job_number,
+  Planning_date,
+  Product_name,
+  Product_number,
+  \`count\`,
+  CURRENT_TIMESTAMP() AS valid_from,
+  CAST(NULL AS TIMESTAMP) AS valid_to,
+  TRUE AS is_current,
+  "Линия 2" AS line
+
+FROM S_SRC
+
+`)}
