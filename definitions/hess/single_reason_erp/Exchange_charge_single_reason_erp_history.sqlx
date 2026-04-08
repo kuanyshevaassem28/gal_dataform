@@ -18,7 +18,8 @@ config {
     dt_end:          "Дата/время окончания простоя",
     Valid_from:      "Начало действия версии",
     Valid_to:        "Конец действия версии",
-    is_current:      "Признак актуальной версии (TRUE — текущая)"
+    is_current:      "Признак актуальной версии (TRUE — текущая)",
+    line: "Производственная линия (Линия 1)"
   }
 } 
 
@@ -103,7 +104,8 @@ SELECT
   n.dt_end,
   CURRENT_DATETIME('Asia/Almaty')        AS Valid_from,
   CAST(NULL AS DATETIME) AS Valid_to,
-  TRUE         AS is_current
+  TRUE         AS is_current,
+  "Линия 1" AS line
 FROM NEW_OR_CHANGED n
 
 UNION ALL
@@ -120,7 +122,8 @@ SELECT
   h.dt_end,
   h.Valid_from,
   CURRENT_DATETIME('Asia/Almaty')        AS Valid_to,
-  FALSE        AS is_current
+  FALSE        AS is_current,
+  "Линия 1" AS line
 FROM ${self()} h
 JOIN CHANGED_KEYS ck
   ON h.ID         = ck.ID
@@ -166,7 +169,8 @@ SELECT
   dt_end,
   CURRENT_DATETIME('Asia/Almaty')        AS Valid_from,
   CAST(NULL AS DATETIME) AS Valid_to,
-  TRUE         AS is_current
+  TRUE         AS is_current,
+  "Линия 1" AS line
 FROM S_SRC
 
 `)}
