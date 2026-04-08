@@ -16,7 +16,8 @@ config {
     production_day: "Производственный день (DATETIME)",
     valid_from:     "Начало действия версии (DATETIME)",
     valid_to:       "Конец действия версии (DATETIME)",
-    is_current:     "Признак актуальной версии"
+    is_current:     "Признак актуальной версии",
+    line: "Производственная линия (Линия 1)"
   }
 }
 
@@ -116,5 +117,6 @@ SELECT
   s.production_day,
   CURRENT_DATETIME('Asia/Almaty') AS valid_from,
   CAST(NULL AS DATETIME)          AS valid_to,
-  TRUE                            AS is_current
+  TRUE                            AS is_current,
+  "Линия 1" AS line
 FROM NEW_OR_CHANGED s
