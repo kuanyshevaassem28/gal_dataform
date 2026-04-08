@@ -5,7 +5,7 @@ config {
 }
 
 SELECT *
-FROM ${ref("Exchange_charge_erp_line_2_history")} 
+FROM ${ref("Exchange_charge_erp_history")} 
 WHERE is_current = TRUE
 
 UNION ALL
