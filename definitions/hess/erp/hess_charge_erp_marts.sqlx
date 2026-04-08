@@ -1,0 +1,15 @@
+config {
+  type: "table",
+  schema: "gal_hess_marts",
+  name: "hess_charge_erp_marts"
+}
+
+SELECT *
+FROM `galery-22579.gal_hess_statistic.Exchange_charge_erp_history`
+WHERE is_current = TRUE
+
+UNION ALL
+
+SELECT *
+FROM `galery-22579.gal_hess_statistic.Exchange_charge_erp_line_2_history`
+WHERE is_current = TRUE
