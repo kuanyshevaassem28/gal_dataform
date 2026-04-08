@@ -13,7 +13,8 @@ config {
     plant_part_SID: "SID участка",
     is_current: "Флаг актуальной версии",
     valid_from: "Начало действия версии",
-    valid_to: "Конец действия версии"
+    valid_to: "Конец действия версии",
+    line: "Производственная линия (Линия 1)"
   }
 }
 
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS ${self()} (
   plant_part_SID INT64,
   is_current BOOL,
   valid_from DATETIME,
-  valid_to DATETIME
+  valid_to DATETIME,
+  line STRING
 );
 
 
@@ -98,6 +100,7 @@ rows_to_merge AS (
     old_valid_from AS valid_from,
     run_dt AS valid_to,
     FALSE AS is_current,
+    "Линия 1" AS line,
 
     NULL AS timestamp,
     NULL AS pallet_SID,
@@ -118,6 +121,7 @@ rows_to_merge AS (
     run_dt AS valid_from,
     NULL AS valid_to,
     TRUE AS is_current,
+    "Линия 1" AS line,
 
     timestamp,
     pallet_SID,
@@ -153,6 +157,7 @@ THEN INSERT (
   pallet_SID,
   plant_part_SID,
   is_current,
+  line,
   valid_from,
   valid_to
 
@@ -164,6 +169,7 @@ VALUES (
   s.pallet_SID,
   s.plant_part_SID,
   TRUE,
+  s.line,
   s.valid_from,
   NULL
 
