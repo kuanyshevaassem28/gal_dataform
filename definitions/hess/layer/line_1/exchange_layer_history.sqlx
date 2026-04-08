@@ -387,7 +387,7 @@ WITH S_SRC AS (
     CAST(height_3_shv AS FLOAT64)              AS height_3_shv,
     CAST(weigh_shv AS FLOAT64)                 AS weigh_shv
 
-  FROM `galery-22579.gal_hess.external_staging_hess_layer`
+  FROM ${ref("external_staging_hess_layer")}
 
   QUALIFY ROW_NUMBER() OVER (PARTITION BY layer_SID ORDER BY ID DESC) = 1
 )
