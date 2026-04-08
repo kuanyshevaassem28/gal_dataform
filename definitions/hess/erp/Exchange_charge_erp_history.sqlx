@@ -43,7 +43,8 @@ config {
 
     Valid_to: "Дата и время окончания действия версии записи (NULL = актуальная версия).",
 
-    is_current: "Флаг актуальной версии записи (TRUE — текущая версия)."
+    is_current: "Флаг актуальной версии записи (TRUE — текущая версия).",
+    line: "Производственная линия (Линия 1)"
   }
 }
  
@@ -179,5 +180,6 @@ SELECT
     value_5,
     CURRENT_TIMESTAMP()     AS Valid_from,
     CAST(NULL AS TIMESTAMP) AS Valid_to,
-    TRUE                    AS is_current
+    TRUE                    AS is_current,
+    "Линия 1" AS line
 FROM NEW_OR_CHANGED
