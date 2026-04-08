@@ -1,0 +1,15 @@
+config {
+  type: "table",
+  schema: "gal_hess_marts",
+  name: "hess_job_marts"
+}
+
+SELECT *
+FROM `galery-22579.gal_hess_statistic.Exchange_job_history`
+WHERE is_current = TRUE
+
+UNION ALL
+
+SELECT *
+FROM `galery-22579.gal_hess_statistic.Exchange_job_line_2_history`
+WHERE is_current = TRUE
