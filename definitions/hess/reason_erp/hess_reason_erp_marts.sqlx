@@ -5,11 +5,11 @@ config {
 }
 
 SELECT *
-FROM `galery-22579.gal_hess_statistic.Exchange_charge_reason_erp_history`
+FROM ${ref("Exchange_charge_reason_erp_history")}
 WHERE is_current = TRUE
 
 UNION ALL
 
 SELECT *
-FROM `galery-22579.gal_hess_statistic.Exchange_charge_reason_erp_line_2_history`
+FROM ${ref("Exchange_charge_reason_erp_line_2_history")}
 WHERE is_current = TRUE
