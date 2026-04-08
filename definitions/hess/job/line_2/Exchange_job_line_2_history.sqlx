@@ -2,7 +2,7 @@ config {
   type: "incremental",
   schema: "gal_hess_statistic",
   name: "Exchange_job_line_2_history",
-  tags: ["hess_job", "hess", "job", "history", "scd2"],
+  tags: ["hess_job_line_2", "hess", "job", "history", "scd2"],
   description: "HESS — SCD2-история по job (ID + job_number). Одна актуальная запись на связку ID+job_number.",
   uniqueKey: ["ID", "job_number", "valid_from"],
 
