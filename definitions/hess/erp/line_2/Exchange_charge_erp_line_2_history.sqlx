@@ -1,0 +1,185 @@
+config {
+  type: "incremental",
+  schema: "gal_hess_statistic",
+  name: "Exchange_charge_erp_line_2_history",
+  description: "HESS ERP — SCD2 история замесов (charge_erp). Хранит версии записей по charge_SID с Valid_from / Valid_to и флагом актуальности.",
+  tags: ["hess_erp_line_2", "hess", "erp", "history", "scd2"],
+  uniqueKey: ["charge_SID", "Valid_from"],
+  columns: {
+
+    ID: "ID записи из ERP (технический идентификатор строки источника).",
+
+    charge_SID: "SID замеса (бизнес-ключ). По нему ведётся SCD2 история.",
+
+    plant_part_SID: "SID участка или части завода, где выполнялся замес.",
+
+    production_day: "Производственный день замеса (TIMESTAMP).",
+
+    dt_start: "Дата и время начала производственного периода / смены (TIMESTAMP).",
+
+    dt_end: "Дата и время окончания производственного периода / смены (TIMESTAMP).",
+
+    shift_number: "Номер смены.",
+
+    Product_name: "Название производимого продукта.",
+
+    Product_number: "Номер (код) продукта.",
+
+    job_number: "Номер производственного задания.",
+
+    value_0: "Производственный показатель value_0 (количественный параметр ERP).",
+
+    value_1: "Производственный показатель value_1.",
+
+    value_2: "Производственный показатель value_2.",
+
+    value_3: "Производственный показатель value_3.",
+
+    value_4: "Производственный показатель value_4.",
+
+    value_5: "Производственный показатель value_5.",
+
+    Valid_from: "Дата и время начала действия версии записи (SCD2).",
+
+    Valid_to: "Дата и время окончания действия версии записи (NULL = актуальная версия).",
+
+    is_current: "Флаг актуальной версии записи (TRUE — текущая версия).",
+    line: "Производственная линия (Линия 2)"
+  }
+}
+ 
+pre_operations {
+  ${when(incremental(), `
+    MERGE ${self()} AS H
+    USING (
+        SELECT 
+            SAFE_CAST(ID AS INT64) AS ID,
+            SAFE_CAST(charge_SID AS INT64) AS charge_SID,
+            SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID,
+
+            PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', production_day) AS production_day,
+            PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_start) AS dt_start,
+            PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_end) AS dt_end,
+
+            SAFE_CAST(shift_number AS INT64) AS shift_number,
+            SAFE_CAST(Product_name AS STRING) AS Product_name,
+            SAFE_CAST(Product_number AS STRING) AS Product_number,
+            SAFE_CAST(job_number AS STRING) AS job_number,
+
+            SAFE_CAST(value_0 AS INT64) AS value_0,
+            SAFE_CAST(value_1 AS INT64) AS value_1,
+            SAFE_CAST(value_2 AS INT64) AS value_2,
+            SAFE_CAST(value_3 AS INT64) AS value_3,
+            SAFE_CAST(value_4 AS INT64) AS value_4,
+            SAFE_CAST(value_5 AS INT64) AS value_5
+
+        FROM ${ref("external_staging_hess_erp")}
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY SAFE_CAST(charge_SID AS INT64)
+            ORDER BY SAFE_CAST(ID AS INT64) DESC
+        ) = 1
+    ) AS S
+
+    ON  H.charge_SID = S.charge_SID
+    AND H.is_current = TRUE
+
+    WHEN MATCHED AND (
+         H.ID             IS DISTINCT FROM S.ID
+      OR H.plant_part_SID IS DISTINCT FROM S.plant_part_SID
+      OR H.production_day IS DISTINCT FROM S.production_day
+      OR H.dt_start       IS DISTINCT FROM S.dt_start
+      OR H.dt_end         IS DISTINCT FROM S.dt_end
+      OR H.shift_number   IS DISTINCT FROM S.shift_number
+      OR H.Product_name   IS DISTINCT FROM S.Product_name
+      OR H.Product_number IS DISTINCT FROM S.Product_number
+      OR H.job_number     IS DISTINCT FROM S.job_number
+      OR H.value_0        IS DISTINCT FROM S.value_0
+      OR H.value_1        IS DISTINCT FROM S.value_1
+      OR H.value_2        IS DISTINCT FROM S.value_2
+      OR H.value_3        IS DISTINCT FROM S.value_3
+      OR H.value_4        IS DISTINCT FROM S.value_4
+      OR H.value_5        IS DISTINCT FROM S.value_5
+    )
+    THEN UPDATE SET
+        Valid_to   = CURRENT_TIMESTAMP(),
+        is_current = FALSE;
+  `)}
+}
+
+WITH S_SRC AS (
+    SELECT 
+        SAFE_CAST(ID AS INT64) AS ID,
+        SAFE_CAST(charge_SID AS INT64) AS charge_SID,
+        SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID,
+
+        PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', production_day) AS production_day,
+        PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_start) AS dt_start,
+        PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_end) AS dt_end,
+
+        SAFE_CAST(shift_number AS INT64) AS shift_number,
+        SAFE_CAST(Product_name AS STRING) AS Product_name,
+        SAFE_CAST(Product_number AS STRING) AS Product_number,
+        SAFE_CAST(job_number AS STRING) AS job_number,
+
+        SAFE_CAST(value_0 AS INT64) AS value_0,
+        SAFE_CAST(value_1 AS INT64) AS value_1,
+        SAFE_CAST(value_2 AS INT64) AS value_2,
+        SAFE_CAST(value_3 AS INT64) AS value_3,
+        SAFE_CAST(value_4 AS INT64) AS value_4,
+        SAFE_CAST(value_5 AS INT64) AS value_5
+
+    FROM ${ref("external_staging_hess_erp")}
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY SAFE_CAST(charge_SID AS INT64)
+        ORDER BY SAFE_CAST(ID AS INT64) DESC
+    ) = 1
+),
+
+NEW_OR_CHANGED AS (
+    SELECT s.*
+    FROM S_SRC s
+    LEFT JOIN ${self()} h
+      ON h.charge_SID = s.charge_SID
+     AND h.is_current = TRUE
+    WHERE h.charge_SID IS NULL
+       OR (
+            h.ID             IS DISTINCT FROM s.ID
+         OR h.plant_part_SID IS DISTINCT FROM s.plant_part_SID
+         OR h.production_day IS DISTINCT FROM s.production_day
+         OR h.dt_start       IS DISTINCT FROM s.dt_start
+         OR h.dt_end         IS DISTINCT FROM s.dt_end
+         OR h.shift_number   IS DISTINCT FROM s.shift_number
+         OR h.Product_name   IS DISTINCT FROM s.Product_name
+         OR h.Product_number IS DISTINCT FROM s.Product_number
+         OR h.job_number     IS DISTINCT FROM s.job_number
+         OR h.value_0        IS DISTINCT FROM s.value_0
+         OR h.value_1        IS DISTINCT FROM s.value_1
+         OR h.value_2        IS DISTINCT FROM s.value_2
+         OR h.value_3        IS DISTINCT FROM s.value_3
+         OR h.value_4        IS DISTINCT FROM s.value_4
+         OR h.value_5        IS DISTINCT FROM s.value_5
+       )
+)
+
+SELECT
+    ID,
+    charge_SID,
+    plant_part_SID,
+    production_day,
+    dt_start,
+    dt_end,
+    shift_number,
+    Product_name,
+    Product_number,
+    job_number,
+    value_0,
+    value_1,
+    value_2,
+    value_3,
+    value_4,
+    value_5,
+    CURRENT_TIMESTAMP()     AS Valid_from,
+    CAST(NULL AS TIMESTAMP) AS Valid_to,
+    TRUE                    AS is_current,
+    "Линия 2" AS line
+FROM NEW_OR_CHANGED
