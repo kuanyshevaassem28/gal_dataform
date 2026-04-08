@@ -125,7 +125,7 @@ select
   t2.nekond_pct,
   t2.main_pct
 
-from ${ref("exchange_layer_history")} t1
+from ${ref("hess_layer_marts")} t1
 inner join ${ref("productions_mart")} t2
   on t1.job_wet = t2.document_number
   and extract(year from t1.charge_wet_start) = t2.document_year
