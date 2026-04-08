@@ -12,7 +12,7 @@ base_charges AS (
     *,
     dt_start = dt_end AS is_zero_duration,
     (value_0 + value_1 + value_2 + value_3 + value_4 + value_5) AS value_sum
-  FROM ${ref("Exchange_charge_erp_history")}
+  FROM ${ref("hess_charge_erp_marts")}
   WHERE
     is_current = TRUE
 ),
