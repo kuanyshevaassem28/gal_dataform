@@ -47,7 +47,8 @@ config {
 
     valid_from:      "Начало действия версии записи (SCD2)",
     valid_to:        "Конец действия версии записи (SCD2)",
-    Is_current:      "Флаг актуальной версии"
+    Is_current:      "Флаг актуальной версии",
+    line: "Производственная линия (Линия 1)"
   }
 } 
 
@@ -176,7 +177,8 @@ SELECT
   exchange_ts               AS exchange_date,
   CURRENT_TIMESTAMP         AS valid_from,
   CAST(NULL AS TIMESTAMP)   AS valid_to,
-  TRUE                      AS Is_current
+  TRUE                      AS Is_current,
+  "Линия 1" AS line
 FROM NEW_OR_CHANGED
 
 UNION ALL
@@ -221,7 +223,8 @@ SELECT
   exchange_date,
   valid_from,
   CURRENT_TIMESTAMP      AS valid_to,
-  FALSE                  AS Is_current
+  FALSE                  AS Is_current,
+  "Линия 1" AS line
 FROM CHANGED_OR_DELETED
 
 `, `
@@ -309,6 +312,7 @@ SELECT
   exchange_ts              AS exchange_date,
   CURRENT_TIMESTAMP        AS valid_from,
   CAST(NULL AS TIMESTAMP)  AS valid_to,
-  TRUE                     AS Is_current
+  TRUE                     AS Is_current,
+  "Линия 1" AS line
 FROM S_SRC
 `)}
