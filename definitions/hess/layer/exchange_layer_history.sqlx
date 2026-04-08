@@ -52,7 +52,8 @@ config {
     weigh_shv:            "Вес SHV",
     valid_from:           "Начало действия версии",
     valid_to:             "Конец действия версии",
-    is_current:           "Признак актуальной версии (TRUE — текущая)"
+    is_current:           "Признак актуальной версии (TRUE — текущая)",
+    line: "Производственная линия (Линия 1)"
   }
 }
 
@@ -265,7 +266,8 @@ SELECT
   n.weigh_shv,
   CURRENT_TIMESTAMP       AS valid_from,
   CAST(NULL AS TIMESTAMP) AS valid_to,
-  TRUE AS is_current
+  TRUE AS is_current,
+  "Линия 1" AS line
 FROM NEW_OR_CHANGED n
 
 UNION ALL
@@ -316,7 +318,8 @@ SELECT
   h.weigh_shv,
   h.valid_from,
   CURRENT_TIMESTAMP AS valid_to,
-  FALSE AS is_current
+  FALSE AS is_current,
+  "Линия 1" AS line
 FROM ${self()} h
 JOIN CHANGED_KEYS ck
   ON h.layer_SID = ck.layer_SID
@@ -423,7 +426,8 @@ SELECT
   weigh_shv,
   CURRENT_TIMESTAMP AS valid_from,
   CAST(NULL AS TIMESTAMP) AS valid_to,
-  TRUE AS is_current
+  TRUE AS is_current,
+  "Линия 1" AS line
 FROM S_SRC
 
 `)}
