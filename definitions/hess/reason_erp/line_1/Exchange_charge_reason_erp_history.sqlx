@@ -1,7 +1,7 @@
 config {
   type: "incremental",
   schema: "gal_hess_statistic",
-  name: "history_hess_reason_erp",
+  name: "Exchange_charge_reason_erp_history",
   tags: ["hess_reason", "hess", "erp", "reason", "history", "scd2"],
   description: "HESS — SCD2 история reason_erp. Типы под target: charge_SID=INT64, plant_part_SID=INT64, reason=INT64, sz_reason=STRING, duration=FLOAT64, valid_from/valid_to=DATETIME.",
   uniqueKey: ["ID", "valid_from"],
