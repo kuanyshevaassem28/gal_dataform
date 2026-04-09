@@ -69,31 +69,129 @@ WITH S_SRC AS (
     CAST(job_wet AS STRING)                    AS job_wet,
     CAST(product_name_wet AS STRING)           AS product_name_wet,
     CAST(product_number_wet AS STRING)         AS product_number_wet,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_wet_start) AS charge_wet_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_wet_end)   AS charge_wet_end,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_wet_start)  AS shift_wet_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_wet_end)    AS shift_wet_end,
+   
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_wet_start AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_wet_start AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_wet_start AS STRING))
+      )
+    ),
+
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_wet_end AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_wet_end AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_wet_end AS STRING))
+        )
+      ),
+
+    DATETIME(
+       COALESCE(
+          SAFE_CAST(shift_wet_start AS TIMESTAMP),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_wet_start AS STRING)),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_wet_start AS STRING))
+          )
+        ),
+
+    DATETIME(
+      COALESCE(
+          SAFE_CAST(shift_wet_end AS TIMESTAMP),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_wet_end AS STRING)),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_wet_end AS STRING))
+        )
+      ),
+
     CAST(shift_wet_number AS INT64)            AS shift_wet_number,
     CAST(charge_SID_wet AS INT64)              AS charge_SID_wet,
     CAST(job_dry AS STRING)                    AS job_dry,
     CAST(product_name_dry AS STRING)           AS product_name_dry,
     CAST(product_number_dry AS STRING)         AS product_number_dry,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_dry_start) AS charge_dry_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_dry_end)   AS charge_dry_end,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_dry_start)  AS shift_dry_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_dry_end)    AS shift_dry_end,
+    
+    -- DRY SIDE
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_dry_start AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_dry_start AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_dry_start AS STRING))
+      )
+    ) AS charge_dry_start,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_dry_end AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_dry_end AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_dry_end AS STRING))
+      )
+    ) AS charge_dry_end,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(shift_dry_start AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_dry_start AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_dry_start AS STRING))
+      )
+    ) AS shift_dry_start,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(shift_dry_end AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_dry_end AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_dry_end AS STRING))
+      )
+    ) AS shift_dry_end,
+
+
+
+
     CAST(shift_dry_number AS INT64)            AS shift_dry_number,
     CAST(charge_SID_dry AS INT64)              AS charge_SID_dry,
     CAST(quality AS INT64)                     AS quality,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)        AS timestamp,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)       AS to_chamber,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)     AS from_chamber,
+
+    -- COMMON TIMESTAMPS
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(timestamp AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING))
+      )
+    ) AS timestamp,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(to_chamber AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(to_chamber AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(to_chamber AS STRING))
+      )
+    ) AS to_chamber,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(from_chamber AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(from_chamber AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(from_chamber AS STRING))
+      )
+    ) AS from_chamber,
+
 
     -- FIX: dry_time должен быть NUMERIC (а не FLOAT64), чтобы совпасть со схемой history
     SAFE_CAST(dry_time AS NUMERIC)             AS dry_time,
 
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', stacked)          AS stacked,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', modified)         AS modified,
+    DATETIME(
+  COALESCE(
+    SAFE_CAST(stacked AS TIMESTAMP),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(stacked AS STRING)),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(stacked AS STRING))
+  )
+) AS stacked,
+
+DATETIME(
+  COALESCE(
+    SAFE_CAST(modified AS TIMESTAMP),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(modified AS STRING)),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(modified AS STRING))
+  )
+) AS modified, 
     CAST(previb_time AS FLOAT64)               AS previb_time,
     CAST(mainvib_time AS FLOAT64)              AS mainvib_time,
     CAST(previb_speed AS FLOAT64)              AS previb_speed,
@@ -338,31 +436,130 @@ WITH S_SRC AS (
     CAST(job_wet AS STRING)                    AS job_wet,
     CAST(product_name_wet AS STRING)           AS product_name_wet,
     CAST(product_number_wet AS STRING)         AS product_number_wet,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_wet_start) AS charge_wet_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_wet_end)   AS charge_wet_end,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_wet_start)  AS shift_wet_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_wet_end)    AS shift_wet_end,
+   
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_wet_start AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_wet_start AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_wet_start AS STRING))
+      )
+    ),
+
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_wet_end AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_wet_end AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_wet_end AS STRING))
+        )
+      ),
+
+    DATETIME(
+       COALESCE(
+          SAFE_CAST(shift_wet_start AS TIMESTAMP),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_wet_start AS STRING)),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_wet_start AS STRING))
+          )
+        ),
+
+    DATETIME(
+      COALESCE(
+          SAFE_CAST(shift_wet_end AS TIMESTAMP),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_wet_end AS STRING)),
+          SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_wet_end AS STRING))
+        )
+      ),
+
     CAST(shift_wet_number AS INT64)            AS shift_wet_number,
     CAST(charge_SID_wet AS INT64)              AS charge_SID_wet,
     CAST(job_dry AS STRING)                    AS job_dry,
     CAST(product_name_dry AS STRING)           AS product_name_dry,
     CAST(product_number_dry AS STRING)         AS product_number_dry,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_dry_start) AS charge_dry_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', charge_dry_end)   AS charge_dry_end,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_dry_start)  AS shift_dry_start,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', shift_dry_end)    AS shift_dry_end,
+    
+    -- DRY SIDE
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_dry_start AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_dry_start AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_dry_start AS STRING))
+      )
+    ) AS charge_dry_start,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(charge_dry_end AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(charge_dry_end AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(charge_dry_end AS STRING))
+      )
+    ) AS charge_dry_end,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(shift_dry_start AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_dry_start AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_dry_start AS STRING))
+      )
+    ) AS shift_dry_start,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(shift_dry_end AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(shift_dry_end AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(shift_dry_end AS STRING))
+      )
+    ) AS shift_dry_end,
+
+
+
+
     CAST(shift_dry_number AS INT64)            AS shift_dry_number,
     CAST(charge_SID_dry AS INT64)              AS charge_SID_dry,
     CAST(quality AS INT64)                     AS quality,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)        AS timestamp,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)       AS to_chamber,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)     AS from_chamber,
 
-    -- FIX: dry_time = NUMERIC
+    -- COMMON TIMESTAMPS
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(timestamp AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING))
+      )
+    ) AS timestamp,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(to_chamber AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(to_chamber AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(to_chamber AS STRING))
+      )
+    ) AS to_chamber,
+    
+    DATETIME(
+      COALESCE(
+        SAFE_CAST(from_chamber AS TIMESTAMP),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(from_chamber AS STRING)),
+        SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(from_chamber AS STRING))
+      )
+    ) AS from_chamber,
+
+
+    -- FIX: dry_time должен быть NUMERIC (а не FLOAT64), чтобы совпасть со схемой history
     SAFE_CAST(dry_time AS NUMERIC)             AS dry_time,
 
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', stacked)          AS stacked,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', modified)         AS modified,
+    DATETIME(
+  COALESCE(
+    SAFE_CAST(stacked AS TIMESTAMP),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(stacked AS STRING)),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(stacked AS STRING))
+  )
+) AS stacked,
+
+DATETIME(
+  COALESCE(
+    SAFE_CAST(modified AS TIMESTAMP),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(modified AS STRING)),
+    SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(modified AS STRING))
+  )
+) AS modified, 
+
     CAST(previb_time AS FLOAT64)               AS previb_time,
     CAST(mainvib_time AS FLOAT64)              AS mainvib_time,
     CAST(previb_speed AS FLOAT64)              AS previb_speed,
