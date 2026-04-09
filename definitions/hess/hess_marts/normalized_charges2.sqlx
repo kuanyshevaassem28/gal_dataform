@@ -128,6 +128,7 @@ final AS (
     a.Valid_from,
     a.Valid_to,
     a.is_current,
+    a.line,
     CASE
       WHEN j.job_number_estimated IS NOT NULL THEN 'estimated'
       ELSE 'original'
