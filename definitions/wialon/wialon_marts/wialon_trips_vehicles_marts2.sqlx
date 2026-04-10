@@ -36,7 +36,7 @@ salestrip AS (
     count(distinct document_id) as trip_count,
     sum(if(unit_name="шт" and nomenclature_name like "%ПОДДОН ТРАНСПОРТИРОВОЧНЫЙ%",quantity,0)) as quantity_pallets,
     sum(if(unit_name="м3" and (nomenclature_name like "%СМЕСЬ БЕТОННАЯ%" or nomenclature_name like "%РАСТВОР%" or nomenclature_name like "%ПЕСКОБЕТОН%"),quantity,0)) as quantity_beton
-   FROM  ${ref("")}  galery-22579.gal_unf.history_unf_sales 
+   FROM  ${ref("history_unf_sales")} 
    where is_current and transport_regnumber<>"" and transport_regnumber is not null and 
    ((unit_name="шт" and nomenclature_name like "%ПОДДОН ТРАНСПОРТИРОВОЧНЫЙ%")  or 
    (unit_name="м3" and (nomenclature_name like "%СМЕСЬ БЕТОННАЯ%" or nomenclature_name like "%РАСТВОР%" or nomenclature_name like "%ПЕСКОБЕТОН%")))
