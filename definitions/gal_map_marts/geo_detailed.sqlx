@@ -141,4 +141,4 @@ AND agg.date = staging_count.date
 LEFT JOIN galery-22579.gal_unf.history_unf_stock_ex AS staging
 ON agg.cell_name = staging.cell_name 
 AND agg.date = DATE(staging.date)
-AND staging.is_current = TRUE;
+AND staging.is_current = TRUE
