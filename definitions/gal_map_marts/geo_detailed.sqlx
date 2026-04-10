@@ -1,0 +1,144 @@
+config {
+  type: "table",
+  schema: "gal_map_marts",
+  name: "geo_detailed"
+}
+
+WITH UniqueDates AS (
+    -- Получаем все уникальные даты из 1c_staging_history, обрезая время
+    SELECT DISTINCT DATE(date) AS date 
+    FROM ${ref("history_unf_stock_ex")}  
+    WHERE is_current = TRUE
+),
+
+CellsExpanded AS (
+    -- Дублируем все ячейки на каждую уникальную дату (CROSS JOIN)
+    SELECT 
+        cells.cell_name,
+        dates.date,
+        cells.cell_group,
+        cells.cell_number,
+        cells.capacity AS avg_capacity        
+    FROM galery-22579.gcp_for_map.pp3_gp_cells_final AS cells
+    CROSS JOIN UniqueDates AS dates
+),
+
+StagingCount AS (
+    -- Считаем количество записей в staging для каждой ячейки и даты
+    SELECT 
+        cell_name,
+        DATE(date) AS date,
+        COUNT(*) AS staging_count
+    FROM ${ref("history_unf_stock_ex")} 
+    WHERE is_current = TRUE
+    GROUP BY cell_name, DATE(date)
+),
+
+AggregatedData AS (
+    -- Агрегируем данные о продуктах, объединяя с ячейками
+    SELECT
+        expanded.cell_name,
+        expanded.date,
+        expanded.cell_group,
+        expanded.cell_number,        
+        expanded.avg_capacity,
+        COALESCE(SUM(staging.quantity_pallets), 0) AS total_quantity_pallets,
+        COALESCE(SUM(CASE WHEN staging.unit_name = 'шт' THEN staging.quantity ELSE 0 END), 0) AS total_quantity_pieces,
+        COALESCE(SUM(CASE WHEN staging.unit_name = 'м2' THEN staging.quantity ELSE 0 END), 0) AS total_quantity_squares,
+        ARRAY_AGG(
+            CASE 
+                WHEN staging.nomenclature_name IS NOT NULL AND LOWER(staging.nomenclature_name) NOT LIKE '%поддон%' 
+                THEN CONCAT(staging.nomenclature_name, ' ', staging.prop_color, ' ', CAST(staging.prop_thickness AS STRING), 
+                            ', (', CAST(staging.quantity_pallets AS STRING), ' паллет)')
+                ELSE NULL
+            END 
+            ORDER BY staging.quantity_pallets DESC
+        ) AS raw_product_list
+    FROM CellsExpanded AS expanded
+    LEFT JOIN galery-22579.gal_unf.history_unf_stock_ex AS staging
+    ON expanded.cell_name = staging.cell_name AND expanded.date = DATE(staging.date) and staging.is_current = TRUE and staging.stock_name="ПП3 СКЛАД ГП"
+    GROUP BY expanded.cell_name, expanded.cell_group, expanded.cell_number, expanded.date, expanded.avg_capacity
+),
+
+FilteredAggregatedData AS (
+    -- Очищаем product_list от NULL и вычисляем доступные паллеты
+    SELECT 
+        cell_name,
+        date,
+        cell_group,
+        cell_number,
+        avg_capacity,
+        total_quantity_pallets,
+        total_quantity_pieces,
+        total_quantity_squares,
+        avg_capacity - total_quantity_pallets AS available_capacity_pallets,  -- Доступное место в паллетах
+        ARRAY(
+            SELECT product FROM UNNEST(raw_product_list) AS product WHERE product IS NOT NULL
+        ) AS product_list
+    FROM AggregatedData
+),
+
+FinalData AS (
+    -- Добавляем статус заполненности ячейки
+    SELECT 
+        *,
+        CASE 
+            WHEN total_quantity_pallets = 0 THEN 'Ячейка полностью доступна'
+            WHEN available_capacity_pallets > 0 THEN 'Ячейка частично доступна'
+            WHEN available_capacity_pallets = 0 THEN 'Ячейка заполнена'
+            WHEN available_capacity_pallets < 0 THEN 'Ячейка переполнена'
+        END AS cell_status
+    FROM FilteredAggregatedData
+)
+
+SELECT 
+    agg.cell_name,
+    agg.date,
+    agg.cell_group,
+    agg.cell_number,
+
+    -- Корректное деление geo-значений на количество записей в staging
+    agg.avg_capacity / COALESCE(staging_count.staging_count, 1) AS avg_capacity,  
+    agg.total_quantity_pallets / COALESCE(staging_count.staging_count, 1) AS total_quantity_pallets,  
+    agg.available_capacity_pallets / COALESCE(staging_count.staging_count, 1) AS available_capacity_pallets,
+    agg.total_quantity_pieces / COALESCE(staging_count.staging_count, 1) AS total_quantity_pieces,
+    agg.total_quantity_squares / COALESCE(staging_count.staging_count, 1) AS total_quantity_squares,
+    agg.cell_status,
+    cells.geography,  -- Геоданные из pp3_gp_cells_final
+    -- Поля из 1c_staging_history
+    staging.quantity_pallets, 
+    staging.quantity,
+    staging.squares_per_pallet,
+    staging.unit_name,
+    staging.prop_category,
+    staging.prop_texture,
+    staging.stock_name,
+    staging.pieces_per_pallet,
+    staging.prop_grade,
+    staging.variation_name,
+    staging.category_name,
+    staging.nomenclature_name,
+    staging.prop_color,
+    staging.owner_name,
+    staging.prop_impregnation,
+    staging.prop_thickness,
+    -- Восстанавливаем product_description
+    CASE 
+        WHEN ARRAY_LENGTH(agg.product_list) IS NULL OR ARRAY_LENGTH(agg.product_list) = 0 
+        THEN CONCAT('Пусто, доступно для размещения ', CAST(agg.available_capacity_pallets AS STRING), ' паллет')
+        ELSE (
+            SELECT STRING_AGG(product, '\n' ORDER BY product) 
+            FROM UNNEST(agg.product_list) AS product
+            LIMIT 50  
+        )
+    END AS product_description
+FROM FinalData agg
+LEFT JOIN galery-22579.gcp_for_map.pp3_gp_cells_final cells 
+ON agg.cell_name = cells.cell_name
+LEFT JOIN StagingCount AS staging_count
+ON agg.cell_name = staging_count.cell_name 
+AND agg.date = staging_count.date
+LEFT JOIN galery-22579.gal_unf.history_unf_stock_ex AS staging
+ON agg.cell_name = staging.cell_name 
+AND agg.date = DATE(staging.date)
+AND staging.is_current = TRUE;
