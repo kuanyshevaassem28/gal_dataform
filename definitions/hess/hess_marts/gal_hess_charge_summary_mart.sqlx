@@ -18,7 +18,7 @@ plan_data AS (
         PARTITION BY CAST(document_number AS STRING), SAFE_CAST(document_date AS DATE)
         ORDER BY document_date DESC
       ) AS row_num
-    FROM `galery-22579.gal_google_sheets.external_production_plan_input`
+    FROM ${ref("external_production_plan_input")}
   )
   WHERE row_num = 1
 ),
@@ -31,7 +31,7 @@ pmg_data AS (
     ROUND(square_meters_per_pallet / layers_per_pallet, 3) AS units_per_layer,
     (pallet_gross_weight_kg - 16)/layers_per_pallet as norm_layer_weight,
     norm_cycle
-  FROM `galery-22579.gal_google_sheets.external_packaging_material_registry`
+  FROM ${ref("external_packaging_material_registry")} 
   WHERE manufacturer = "ПП3 Линия вибропрессования 1"
 ),
 
@@ -75,7 +75,7 @@ reason_data AS (
     SUM(CASE WHEN LOWER(sz_reason) = 'f-mix' THEN duration_sec ELSE 0 END) AS F_Mix_time,
     SUM(CASE WHEN LOWER(sz_reason) = 'product eject' THEN duration_sec ELSE 0 END) AS Product_eject_time,
     SUM(duration_sec) AS all_time_reason
-  FROM `galery-22579.gal_hess_marts.detailed_downtime_mart`
+  FROM ${ref("detailed_downtime_mart")} 
   GROUP BY line, charge_SID, segment_number, charge_sid_grouped, is_production_reason, plant_part_SID, date, nomenclature_name, variation_name, unit_name
 ),
 
@@ -96,7 +96,7 @@ erp_data AS (
       TIMESTAMP_DIFF(dt_end, dt_start, SECOND),
       NULLIF((value_1 + value_2 + value_3), 0)
     ) AS avg_cycle_time_sec
-  FROM `galery-22579.gal_hess_marts.normalized_charges3_materialized`
+  FROM ${ref("normalized_charges3_materialized")} 
   WHERE is_current = TRUE
 ),
 
@@ -104,7 +104,7 @@ erp_data AS (
  
 pallet_layers AS (
   SELECT line, pallet_SID, layer_sid
-  FROM `galery-22579.gal_hess_marts.hess_pallet_marts`,
+  FROM ${ref("hess_pallet_marts")} ,
   UNNEST([
     layer_SID_1, layer_SID_2, layer_SID_3, layer_SID_4, layer_SID_5,
     layer_SID_6, layer_SID_7, layer_SID_8, layer_SID_9, layer_SID_10,
@@ -169,7 +169,7 @@ pallet_layers AS (
     FROM
       (
         SELECT line, charge_SID, segment_number, job_number, dt_start
-        FROM `galery-22579.gal_hess_marts.normalized_charges3_materialized`
+        FROM ${ref("normalized_charges3_materialized")} 
         WHERE is_current = TRUE
       ) as charge
     LEFT JOIN matched_layers as l
