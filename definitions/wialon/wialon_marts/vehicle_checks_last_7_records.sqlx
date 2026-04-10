@@ -1,0 +1,88 @@
+config {
+  type: "table",
+  schema: "gal_wialon_marts",
+  name: "vehicle_checks_last_7_records"
+}
+
+WITH ranked AS (
+  SELECT
+    VehicleID,
+    MAX(name) AS name,
+    MAX(brand) AS brand,
+    MAX(vehicle_type) AS vehicle_type,
+
+    date,
+    cl_gps,
+    cl_recording,
+    cl_camera1,
+    cl_camera2,
+    cl_camera3,
+    all_cameras_ok,
+
+    ROW_NUMBER() OVER (PARTITION BY VehicleID ORDER BY date DESC) AS rn
+  FROM  ${ref("wialon_trips_vehicles_marts3")} 
+  GROUP BY
+    VehicleID,
+    date,
+    cl_gps,
+    cl_recording,
+    cl_camera1,
+    cl_camera2,
+    cl_camera3,
+    all_cameras_ok
+),
+last7 AS (
+  SELECT *
+  FROM ranked
+  WHERE rn <= 7
+)
+SELECT
+  VehicleID,
+  MAX(name) AS name,
+  MAX(brand) AS brand,
+  MAX(vehicle_type) AS vehicle_type,
+
+  MAX(date) AS last_date,
+
+  -- текущие значения (последняя запись)
+  MAX(CASE WHEN rn = 1 THEN cl_gps END)         AS cl_gps_current,
+  MAX(CASE WHEN rn = 1 THEN cl_recording END)   AS cl_recording_current,
+  MAX(CASE WHEN rn = 1 THEN cl_camera1 END)     AS cl_camera1_current,
+  MAX(CASE WHEN rn = 1 THEN cl_camera2 END)     AS cl_camera2_current,
+  MAX(CASE WHEN rn = 1 THEN cl_camera3 END)     AS cl_camera3_current,
+  MAX(CASE WHEN rn = 1 THEN all_cameras_ok END) AS all_cameras_ok_current,
+
+  -- ленты за 7 записей
+  STRING_AGG(
+    CASE WHEN cl_gps IS NULL THEN '◻️' WHEN cl_gps THEN '✅' ELSE '🔴' END,
+    '' ORDER BY date
+  ) AS status_gps_last_7_records,
+
+  STRING_AGG(
+    CASE WHEN cl_recording IS NULL THEN '◻️' WHEN cl_recording THEN '✅' ELSE '🔴' END,
+    '' ORDER BY date
+  ) AS status_recording_last_7_records,
+
+  STRING_AGG(
+    CASE WHEN cl_camera1 IS NULL THEN '◻️' WHEN cl_camera1 THEN '✅' ELSE '🔴' END,
+    '' ORDER BY date
+  ) AS status_camera1_last_7_records,
+
+  STRING_AGG(
+    CASE WHEN cl_camera2 IS NULL THEN '◻️' WHEN cl_camera2 THEN '✅' ELSE '🔴' END,
+    '' ORDER BY date
+  ) AS status_camera2_last_7_records,
+
+  STRING_AGG(
+    CASE WHEN cl_camera3 IS NULL THEN '◻️' WHEN cl_camera3 THEN '✅' ELSE '🔴' END,
+    '' ORDER BY date
+  ) AS status_camera3_last_7_records,
+
+  STRING_AGG(
+    CASE WHEN all_cameras_ok IS NULL THEN '◻️' WHEN all_cameras_ok THEN '✅' ELSE '🔴' END,
+    '' ORDER BY date
+  ) AS status_all_cameras_ok_last_7_records
+
+FROM last7
+GROUP BY VehicleID
+ORDER BY VehicleID
