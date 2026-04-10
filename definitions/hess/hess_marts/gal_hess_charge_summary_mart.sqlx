@@ -336,4 +336,4 @@ LEFT JOIN pmg_data pm
     ) - 1)
   )
 left join erp_layers el on el.line=r.line and 
-      el.charge_SID = r.charge_SID and el.segment_number = r.segment_number;
+      el.charge_SID = r.charge_SID and el.segment_number = r.segment_number
