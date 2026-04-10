@@ -85,7 +85,7 @@ aggregated_erp AS (
     FROM ${ref("normalized_charges3_materialized")} 
     WHERE is_current = TRUE
   ) charge
-    ON base.charge_SID = charge.charge_SID and base.segment_number = charge.segment_number and base.line = line
+    ON base.charge_SID = charge.charge_SID and base.segment_number = charge.segment_number and base.line = charge.line
   GROUP BY
     base.charge_SID, base.segment_number, job_number, base.plant_part_SID, base.reason, base.sz_reason, base.line
 ),
