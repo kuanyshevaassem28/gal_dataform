@@ -175,7 +175,7 @@ to_close AS (
     h.valid_from,
     CURRENT_DATETIME('Asia/Almaty') AS valid_to,
     FALSE AS is_current
-  FROM `galery-22579.gal_unf.history_unf_stock` h
+  FROM ${self()} h
   JOIN diff d
     ON h.surrogate_key = d.surrogate_key
   WHERE h.is_current = TRUE
