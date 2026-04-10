@@ -1,0 +1,99 @@
+config {
+  type: "table",
+  schema: "gal_wialon_marts",
+  name: "wialon_trips_vehicles_marts"
+}
+
+
+WITH t AS (
+  SELECT *
+  FROM ${ref("history_wialon_trips_vehicles")}  
+  WHERE is_current = TRUE
+),
+MD AS (
+  SELECT 
+VehicleID,
+Report_name,
+Active,
+brand,	
+vehicle_type,
+norm_plate,
+is_nscar,
+  PARSE_DATE('%d.%m.%Y', Effective_from) AS Effective_from,
+  PARSE_DATE('%d.%m.%Y', Effective_to) AS Effective_to
+  FROM   ${ref("external_MD_vehicles")}  
+),
+u AS (
+  SELECT DISTINCT Report_name as name, VehicleID,
+  FROM  ${ref("external_MD_vehicles")}  
+),
+e AS (
+  SELECT
+    surrogate_key,
+    engine_time_sec,
+    moving_time_sec,
+    idle_time_sec,
+    start_type   AS engine_start_time,
+    start_pos    AS engine_start_pos,
+    end_type     AS engine_end_time,
+    end_pos      AS engine_end_pos,
+    _ingested_at AS _ingested_at_engine
+  FROM  ${ref("history_wialon_engine_runtime_vehicles")}  
+  WHERE is_current = TRUE
+),
+s AS (
+  SELECT
+    surrogate_key,
+    start_level_lt,
+    end_level_lt,
+    fuel_refueled_lt,
+    fuel_drained_lt,
+    dut_avg_lt_per_100km,
+    dut_spent_lt,
+    _ingested_at AS _ingested_at_summary
+  FROM  ${ref("history_wialon_summary")}  
+  WHERE is_current = TRUE
+)
+
+SELECT 
+  t.number, 
+  safe_cast(t.date AS DATE) AS date,
+  MD.report_name AS name,
+  MD.brand,
+  MD.norm_plate as registration_number,
+  MD.vehicle_type,
+  MD.norm_plate as registration_number_clean,
+  MD.VehicleID,
+  t.start_type,
+  t.start_pos,
+  t.end_type,
+  t.end_pos,
+  t.distance_km,
+  s.dut_avg_lt_per_100km,
+  s.dut_spent_lt,
+  t.total_time_sec, 
+ -- t._ingested_at AS _ingested_at_trips,
+  t.surrogate_key,
+
+  e.engine_time_sec,
+  e.moving_time_sec,
+  e.idle_time_sec,
+  e.engine_start_time,
+  e.engine_start_pos,
+  e.engine_end_time,
+  e.engine_end_pos,
+  e._ingested_at_engine,
+
+  -- summary (по surrogate_key)
+  s.start_level_lt,
+  s.end_level_lt,
+  s.fuel_refueled_lt,
+  s.fuel_drained_lt,
+  s._ingested_at_summary
+
+FROM t
+LEFT JOIN u ON t.name = u.name
+LEFT JOIN e ON t.surrogate_key = e.surrogate_key
+LEFT JOIN s ON s.surrogate_key = t.surrogate_key
+left join MD on u.VehicleID = MD.VehicleID and safe_cast(t.date AS DATE) between MD.Effective_from and MD.Effective_to
+ORDER BY t.date ASC
