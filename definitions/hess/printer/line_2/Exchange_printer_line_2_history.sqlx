@@ -41,14 +41,27 @@ WITH s AS (
   SELECT
     SAFE_CAST(ID AS INT64) AS ID,
 
-   COALESCE(
-  -- если строка → сначала в STRING
+  COALESCE(
+
+  -- если уже TIMESTAMP → просто берём
+  IF(
+    SAFE_CAST(timestamp AS STRING) LIKE '%-%',
+    SAFE_CAST(timestamp AS TIMESTAMP),
+    NULL
+  ),
+
+  -- строки с временем
   SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
   SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
   SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
 
-  -- если unix → INT64
-  TIMESTAMP_SECONDS(SAFE_CAST(timestamp AS INT64))
+  -- unix timestamp (ТОЛЬКО если число)
+  IF(
+    REGEXP_CONTAINS(CAST(timestamp AS STRING), r'^[0-9]+$'),
+    TIMESTAMP_SECONDS(CAST(timestamp AS INT64)),
+    NULL
+  )
+
 ) AS timestamp,
 
 
@@ -61,12 +74,16 @@ WITH s AS (
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY SAFE_CAST(ID AS INT64)
     ORDER BY
-  COALESCE(
-    SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
-    SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
-    SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
-    TIMESTAMP_SECONDS(SAFE_CAST(timestamp AS INT64))
-  ) DESC
+COALESCE(
+  SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
+  SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
+  SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
+  IF(
+    REGEXP_CONTAINS(CAST(timestamp AS STRING), r'^[0-9]+$'),
+    TIMESTAMP_SECONDS(CAST(timestamp AS INT64)),
+    NULL
+  )
+) DESC
   ) = 1
 
 ),
