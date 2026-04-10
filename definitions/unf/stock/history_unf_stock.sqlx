@@ -129,21 +129,53 @@ diff AS (
 -- =========================
 to_insert AS (
   SELECT
-    d.*,
+    d.owner_name,
+    d.stock_name,
+    d.nomenclature_name,
+    d.variation_name,
+    d.unit_name,
+    d.category_name,
+    d.quantity,
+    d.quantity_reserved,
+    d.quantity_free,
+    d.owner_id,
+    d.stock_id,
+    d.nomenclature_id,
+    d.variation_id,
+    d.unit_id,
+    d.category_id,
+    d.date,
+    d.surrogate_key,
     CURRENT_DATETIME('Asia/Almaty') AS valid_from,
-    CAST(NULL AS DATETIME)          AS valid_to,
-    TRUE                            AS is_current
+    NULL AS valid_to,
+    TRUE AS is_current
   FROM diff d
   WHERE d.is_new = TRUE OR d.is_changed = TRUE
-),
+)
 
 to_close AS (
   SELECT
-    h.* EXCEPT(valid_to, is_current),
+    h.owner_name,
+    h.stock_name,
+    h.nomenclature_name,
+    h.variation_name,
+    h.unit_name,
+    h.category_name,
+    h.quantity,
+    h.quantity_reserved,
+    h.quantity_free,
+    h.owner_id,
+    h.stock_id,
+    h.nomenclature_id,
+    h.variation_id,
+    h.unit_id,
+    h.category_id,
+    h.date,
+    h.surrogate_key,
     h.valid_from,
     CURRENT_DATETIME('Asia/Almaty') AS valid_to,
-    FALSE                           AS is_current
-  FROM ${self()} h
+    FALSE AS is_current
+  FROM `galery-22579.gal_unf.history_unf_stock` h
   JOIN diff d
     ON h.surrogate_key = d.surrogate_key
   WHERE h.is_current = TRUE
@@ -151,9 +183,7 @@ to_close AS (
 )
 
 SELECT * FROM to_insert
-
 UNION ALL
-
 SELECT * FROM to_close
 
 `, `
