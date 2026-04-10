@@ -1,0 +1,170 @@
+config {
+  type: "table",
+  schema: "gal_wialon_marts",
+  name: "wialon_trips_vehicles_marts2"
+}
+
+WITH
+  UniqueDates AS (
+  SELECT
+    DISTINCT CAST(date AS DATE) AS trip_date
+  FROM
+     ${ref("wialon_trips_vehicles_marts")}
+  WHERE
+    SAFE_CAST(date AS DATE) IS NOT NULL ),
+
+  UniqueVehicles AS (
+  SELECT
+    norm_plate as registration_number,
+    norm_plate as registration_number_clean,
+    Report_name as name,
+    brand,
+    vehicle_type,
+    active,
+  PARSE_DATE('%d.%m.%Y', Effective_from) AS Effective_from,
+  PARSE_DATE('%d.%m.%Y', Effective_to) AS Effective_to,
+  VehicleID
+
+  FROM
+     ${ref("external_MD_vehicles")}),
+salestrip AS (
+  SELECT 
+    left(transport_regnumber,8) as transport_regnumber,
+    transport_name, 
+    any_value(driver_name) as driver_name,
+    date,
+    count(distinct document_id) as trip_count,
+    sum(if(unit_name="шт" and nomenclature_name like "%ПОДДОН ТРАНСПОРТИРОВОЧНЫЙ%",quantity,0)) as quantity_pallets,
+    sum(if(unit_name="м3" and (nomenclature_name like "%СМЕСЬ БЕТОННАЯ%" or nomenclature_name like "%РАСТВОР%" or nomenclature_name like "%ПЕСКОБЕТОН%"),quantity,0)) as quantity_beton
+   FROM  ${ref("")}  galery-22579.gal_unf.history_unf_sales 
+   where is_current and transport_regnumber<>"" and transport_regnumber is not null and 
+   ((unit_name="шт" and nomenclature_name like "%ПОДДОН ТРАНСПОРТИРОВОЧНЫЙ%")  or 
+   (unit_name="м3" and (nomenclature_name like "%СМЕСЬ БЕТОННАЯ%" or nomenclature_name like "%РАСТВОР%" or nomenclature_name like "%ПЕСКОБЕТОН%")))
+   group by transport_regnumber,transport_name, date),
+receiptstrip AS (
+  SELECT 
+    left(transport_regnumber,8) as transport_regnumber,
+    transport_name, 
+    any_value(driver_name) as driver_name,
+    date,
+    count(distinct document_id) as trip_count,
+    sum(if(unit_name="кг",quantity/1000,quantity)) as quantity_t
+   FROM  ${ref("history_unf_receipts")}   
+   where is_current and transport_regnumber<>"" and transport_regnumber is not null and (unit_name="т" or unit_name="кг")
+   group by transport_regnumber,transport_name, date),
+
+  AllCombinations AS (
+  SELECT
+    ud.trip_date,
+    uv.registration_number,
+    uv.registration_number_clean,
+    uv.name,
+    uv.brand,
+    uv.vehicle_type,
+    uv.vehicleID
+
+  FROM
+    UniqueDates AS ud
+  INNER JOIN
+    UniqueVehicles AS uv ON trip_date between uv.Effective_from and uv.Effective_to and active = true),
+
+dispatcher_vehicleCheks AS (
+  SELECT
+    vc.op_day,
+    vc.norm_plate as registration_number_clean,
+    vc.status_name,
+    vc.offline_reason_name,
+    vc.offline_is_planned,
+    vc.offline_comment,
+    vc.cl_comment,
+    vc.cl_recording,
+    vc.cl_gps,
+    vc.cl_camera1,
+    vc.cl_camera2,
+    vc.cl_camera3,
+    vc.all_cameras_ok
+  FROM
+    `galery-22579.gal_google_sheets.vehicle_checks_mart` as vc
+)
+
+SELECT
+  ac.trip_date AS date,
+  ac.name,
+  ac.brand,
+  ac.registration_number,
+  ac.vehicle_type,
+  ac.VehicleID,
+
+  t.start_type AS start_type,
+  t.start_pos AS start_pos,
+  t.end_type AS end_type,
+  t.end_pos AS end_pos,
+  ac.registration_number_clean AS registration_number_clean,
+
+  COALESCE(t.distance_km, 0) AS distance_km,
+  COALESCE(t.dut_spent_lt, 0) AS dut_spent_lt,
+  COALESCE(t.dut_avg_lt_per_100km, 0) AS dut_avg_lt_per_100km,
+  COALESCE(t.total_time_sec, 0) AS total_time_sec,   
+
+  COALESCE(t.engine_time_sec, 0) AS engine_time_sec,
+  COALESCE(t.moving_time_sec, 0) AS moving_time_sec,
+  COALESCE(t.idle_time_sec, 0) AS idle_time_sec,
+  t.engine_start_time AS engine_start_time,  
+  t.engine_start_pos AS engine_start_pos,
+  t.engine_end_time AS engine_end_time,
+  t.engine_end_pos AS engine_end_pos, 
+  st.trip_count as sales_trip_count,
+  rt.trip_count as receipt_trip_count,
+  st.quantity_pallets,
+  st.quantity_beton,
+  rt.quantity_t,  
+  st.transport_name as sales_transport_name,
+  rt.transport_name as receipt_transport_name,
+  COALESCE(st.driver_name, rt.driver_name) as driver_name,
+  coalesce(st.trip_count,0) + coalesce(rt.trip_count,0) as total_trip_count,
+
+  COALESCE(t.start_level_lt, 0)     AS start_level_lt,
+  COALESCE(t.end_level_lt, 0)       AS end_level_lt,
+  COALESCE(t.fuel_refueled_lt, 0)   AS fuel_refueled_lt,
+  COALESCE(t.fuel_drained_lt, 0)    AS fuel_drained_lt,
+
+  CASE
+    WHEN t.registration_number IS NULL THEN 'Не было связи'
+    WHEN COALESCE(t.distance_km, 0) > 10 THEN 'На линии'
+    ELSE 'Стоит'
+END
+  AS status,
+  vc.status_name as dispatcher_status_name,
+    vc.offline_reason_name,
+    vc.offline_is_planned,
+    vc.offline_comment,
+    vc.cl_comment,
+    vc.cl_recording,
+    vc.cl_gps,
+    vc.cl_camera1,
+    vc.cl_camera2,
+    vc.cl_camera3,
+    vc.all_cameras_ok
+
+FROM
+  AllCombinations AS ac
+LEFT JOIN
+  `galery-22579.gal_wialon_marts.wialon_trips_vehicles_marts` AS t
+ON
+  ac.trip_date = CAST(t.date AS DATE)
+  AND ac.registration_number_clean = t.registration_number_clean
+LEFT JOIN
+  salestrip AS st
+ON
+  ac.registration_number_clean = st.transport_regnumber
+  AND ac.trip_date = CAST(st.date AS DATE)
+LEFT JOIN
+  receiptstrip AS rt
+ON
+  ac.registration_number_clean = rt.transport_regnumber
+  AND ac.trip_date = CAST(rt.date AS DATE)
+left join dispatcher_vehicleCheks as vc on ac.registration_number_clean = vc.registration_number_clean
+  AND ac.trip_date = SAFE_CAST(vc.op_day AS DATE)
+ORDER BY
+  ac.trip_date,
+  t.registration_number_clean
