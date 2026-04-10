@@ -1,0 +1,140 @@
+config {
+  type: "view",
+  schema: "gal_google_sheets",
+  name: "vehicle_checks_mart"
+}
+
+WITH
+-- 1) Справочник статусов (жёстко зашит)
+status_dict AS (
+  SELECT * FROM UNNEST([
+    STRUCT('online'  AS StatusID, 'На линии'           AS StatusName, TRUE  AS IsFinished),
+    STRUCT('offline' AS StatusID, 'Пока не в сети'     AS StatusName, FALSE AS IsFinished),
+    STRUCT('day_off' AS StatusID, 'Не на линии'        AS StatusName, TRUE  AS IsFinished),
+    STRUCT('wait'    AS StatusID, 'Ожидает проверки'   AS StatusName, FALSE AS IsFinished)
+  ])
+),
+-- 2) Справочник причин оффлайна (жёстко зашит)
+reason_dict AS (
+  SELECT * FROM UNNEST([
+    STRUCT('repair'      AS ReasonID, 'Ремонт'          AS ReasonName, FALSE AS IsPlanned),
+    STRUCT('maintenance' AS ReasonID, 'ТО'              AS ReasonName, TRUE  AS IsPlanned),
+    STRUCT('no_driver'   AS ReasonID, 'Нет водителя'    AS ReasonName, FALSE AS IsPlanned),
+    STRUCT('no_route'    AS ReasonID, 'Нет потребности' AS ReasonName, FALSE AS IsPlanned),
+    STRUCT('other'       AS ReasonID, 'Прочее'          AS ReasonName, FALSE AS IsPlanned)
+  ])
+),
+-- 3) Базовые проверки с нормализацией типов и времени
+checks AS (
+  SELECT
+    -- Ключи/даты
+    SAFE_CAST(OpDayID AS DATE)                                                   AS op_day,
+    CAST(VehicleID AS STRING)                                                    AS vehicle_id,
+    CAST(CheckID AS STRING)                                                      AS check_id,
+
+    -- Статусы/причины (сырые)
+    CAST(StatusID AS STRING)                                                     AS status_id,
+    CAST(OffLineReasonID AS STRING)                                              AS offline_reason_id,
+    CAST(OffLineComment AS STRING)                                               AS offline_comment,
+
+    -- Контрольные флаги
+    CAST(CL_Camera1 AS BOOL)                                                     AS cl_camera1,
+    CAST(CL_Camera2 AS BOOL)                                                     AS cl_camera2,
+    CAST(CL_Camera3 AS BOOL)                                                     AS cl_camera3,
+    CAST(CL_GPS AS BOOL)                                                         AS cl_gps,
+    CAST(CL_Recording AS BOOL)                                                   AS cl_recording,
+    CAST(CL_Comment AS STRING)                                                   AS cl_comment,
+
+    -- Кто/когда проверил
+    -- Пытаемся распознать строку CheckedAt в TIMESTAMP.
+    -- Если там локальное время без часового пояса, укажите правильную зону вместо 'Asia/Almaty'.
+    COALESCE(
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S%Ez', CheckedAt),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CheckedAt),
+      SAFE.PARSE_TIMESTAMP('%d.%m.%Y %H:%M:%S', CheckedAt)
+    )                                                                            AS checked_at_ts_utc_guess,
+    CAST(CheckedBy AS STRING)                                                    AS checked_by_raw
+  FROM `galery-22579.gal_google_sheets.external_dispatcher_vehiclechecks`
+),
+-- 4) Нормализуем метку времени в локальную зону при необходимости
+checks_ts AS (
+  SELECT
+    c.*,
+    -- Если исходная строка была без таймзоны и фактически локальная (Asia/Almaty),
+    -- можно получить локальное представление так:
+    -- TIMESTAMP в локальной зоне для удобства аналитики.
+    c.checked_at_ts_utc_guess                                                     AS checked_at_ts,  -- хранить в UTC
+    DATETIME(c.checked_at_ts_utc_guess, 'Asia/Almaty')                            AS checked_at_local_dt,
+    FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', c.checked_at_ts_utc_guess, 'Asia/Almaty') AS checked_at_local_str
+  FROM checks c
+),
+-- 5) Обогащаем из реестра ТС
+veh AS (
+  SELECT
+    CAST(VehicleID AS STRING)             AS vehicle_id,
+    CAST(VehicleName AS STRING)           AS vehicle_name,
+    CAST(Active AS BOOL)                  AS vehicle_active,
+    CAST(brand AS STRING)                 AS vehicle_brand,
+    CAST(registration_number AS STRING)   AS registration_number,
+    CAST(vehicle_type AS STRING)          AS vehicle_type,
+    CAST(norm_plate AS STRING)            AS norm_plate,
+    CAST(is_nscar AS BOOL)                AS is_nscar
+  FROM `galery-22579.gal_google_sheets.external_dispatcher_vehicles`
+)
+
+SELECT
+  -- Ключи/даты
+  t.op_day,
+  t.vehicle_id,
+  t.check_id,
+
+  -- Паспорта ТС
+  v.vehicle_name,
+  v.vehicle_active,
+  v.vehicle_brand,
+  v.registration_number,
+  v.vehicle_type,
+  v.norm_plate,
+  v.is_nscar,
+
+  -- Статусы (со справочником)
+  t.status_id,
+  sd.StatusName        AS status_name,
+  sd.IsFinished        AS status_is_finished,
+
+  -- Причина оффлайна (со справочником)
+  t.offline_reason_id,
+  rd.ReasonName        AS offline_reason_name,
+  rd.IsPlanned         AS offline_is_planned,
+  t.offline_comment,
+
+  -- Контрольные флаги (сырые)
+  t.cl_camera1,
+  t.cl_camera2,
+  t.cl_camera3,
+  t.cl_gps,
+  t.cl_recording,
+  t.cl_comment,
+
+  -- Производные контрольные метрики
+  -- Все камеры ок?
+  (t.cl_camera1 IS TRUE AND t.cl_camera2 IS TRUE AND t.cl_camera3 IS TRUE) AS all_cameras_ok,
+  -- Есть ли любые проблемы по телематике/видео?
+  ( (t.cl_camera1 IS FALSE) OR (t.cl_camera2 IS FALSE) OR (t.cl_camera3 IS FALSE)
+    OR (t.cl_gps IS FALSE) OR (t.cl_recording IS FALSE) )                  AS has_any_device_issue,
+  -- Онлайн ли ТС по статусу
+  (t.status_id = 'online')                                                 AS is_online,
+
+  -- Временные поля
+  t.checked_at_ts,
+  t.checked_at_local_dt,
+  t.checked_at_local_str,
+  t.checked_by_raw AS checked_by
+
+FROM checks_ts t
+LEFT JOIN veh v
+  ON v.vehicle_id = t.vehicle_id
+LEFT JOIN status_dict sd
+  ON sd.StatusID = t.status_id
+LEFT JOIN reason_dict rd
+  ON rd.ReasonID = t.offline_reason_id
