@@ -3,17 +3,19 @@ config {
   schema: "gal_hess_marts",
   name: "daily_shift_kpi_mart"
 }
- 
+
+
 WITH
 -- 1. Смена формы и цвета (только по мокрой стороне, реальные партии)
 sorted_wet AS (
   SELECT
     date,
+    line,
     dt_start,
     nomenclature_name,
     variation_name,
     ROW_NUMBER() OVER (PARTITION BY date ORDER BY dt_start) AS rn
-  FROM ${ref("gal_hess_charge_summary_mart")} 
+  FROM `galery-22579.gal_hess_marts.gal_hess_charge_summary_mart`
   WHERE plant_part_SID = 101
     AND charge_sid_grouped = CAST(charge_SID AS STRING)
     AND nomenclature_name IS NOT NULL
@@ -21,6 +23,7 @@ sorted_wet AS (
 ),
 transitions AS (
   SELECT
+    curr.line,
     curr.date,
     COUNTIF(curr.nomenclature_name != prev.nomenclature_name) AS form_change_count,
     COUNTIF(
@@ -30,13 +33,14 @@ transitions AS (
   FROM sorted_wet curr
   LEFT JOIN sorted_wet prev
     ON curr.date = prev.date AND curr.rn = prev.rn + 1
-  GROUP BY curr.date
+  GROUP BY curr.line, curr.date
 ),
 
 -- 2. Агрегация по суткам и участкам
 aggregated AS (
   SELECT
     date,
+    line,
     plant_part_SID,
 
     -- value
@@ -94,11 +98,10 @@ aggregated AS (
 
     -- время периода
     MIN(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN dt_start ELSE NULL END) AS dt_start,
-    MAX(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN dt_end ELSE NULL END) AS dt_end,
-    line
+    MAX(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN dt_end ELSE NULL END) AS dt_end
 
-  FROM ${ref("gal_hess_charge_summary_mart")}  
-  GROUP BY date, plant_part_SID,line
+  FROM `galery-22579.gal_hess_marts.gal_hess_charge_summary_mart`
+  GROUP BY date, line, plant_part_SID
 )
 
 -- 3. Финальный SELECT
@@ -135,4 +138,4 @@ SELECT
 
 FROM aggregated a
 LEFT JOIN transitions t ON a.date = t.date
-ORDER BY a.date, a.plant_part_SID
+ORDER BY a.date, a.plant_part_SID;
