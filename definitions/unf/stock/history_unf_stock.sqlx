@@ -146,8 +146,8 @@ to_insert AS (
     d.category_id,
     d.date,
     d.surrogate_key,
-    CURRENT_DATETIME('Asia/Almaty') AS valid_from,
-    CAST(NULL AS DATETIME)          AS valid_to,
+    CURRENT_TIMESTAMP() AS valid_from,
+    CAST(NULL AS TIMESTAMP) AS valid_to,
     TRUE AS is_current
   FROM diff d
   WHERE d.is_new = TRUE OR d.is_changed = TRUE
@@ -173,7 +173,7 @@ to_close AS (
     h.date,
     h.surrogate_key,
     h.valid_from,
-    CURRENT_DATETIME('Asia/Almaty') AS valid_to,
+    CURRENT_TIMESTAMP() AS valid_to,
     FALSE AS is_current
   FROM ${self()} h
   JOIN diff d
@@ -223,8 +223,8 @@ WITH s AS (
 
 SELECT
   s.*,
-  CURRENT_DATETIME('Asia/Almaty') AS valid_from,
-  CAST(NULL AS DATETIME)          AS valid_to,
+  CURRENT_TIMESTAMP() AS valid_from,
+  CAST(NULL AS TIMESTAMP) AS valid_to,
   TRUE                            AS is_current
 FROM s
 
