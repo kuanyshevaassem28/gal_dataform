@@ -53,7 +53,7 @@ trimmed_single_reasons AS (
       ELSE base.dt_end
     END AS dt_end_trimmed
 
-  FROM `galery-22579.gal_hess_marts.exchange_single_reason_with_segments_materialized` base
+  FROM  `galery-22579.gal_hess_marts.exchange_single_reason_with_segments_materialized` base
   WHERE  base.dt_start IS NOT NULL
 ),
 
@@ -81,7 +81,7 @@ aggregated_erp AS (
   FROM trimmed_single_reasons base
   LEFT JOIN (
     SELECT charge_SID, segment_number, job_number
-    FROM `galery-22579.gal_hess_marts.normalized_charges3_materialized` 
+    FROM ${ref("normalized_charges3_materialized")}  
     WHERE is_current = TRUE
   ) charge
     ON base.charge_SID = charge.charge_SID and base.segment_number = charge.segment_number
@@ -100,7 +100,7 @@ unf_products AS (
         PARTITION BY document_number, EXTRACT(YEAR FROM document_date)
         ORDER BY quantity DESC
       ) AS rn
-    FROM `galery-22579.gal_unf.history_unf_production_products`
+    FROM ${ref("history_unf_production_products")} 
     WHERE is_current = TRUE
   )
   WHERE rn = 1
