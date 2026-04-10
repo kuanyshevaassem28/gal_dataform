@@ -138,4 +138,4 @@ SELECT
 
 FROM aggregated a
 LEFT JOIN transitions t ON a.date = t.date
-ORDER BY a.date, a.plant_part_SID;
+ORDER BY a.date, a.plant_part_SID
