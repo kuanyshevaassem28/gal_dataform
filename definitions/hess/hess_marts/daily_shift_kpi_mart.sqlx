@@ -98,7 +98,7 @@ aggregated AS (
     line
 
   FROM ${ref("gal_hess_charge_summary_mart")}  
-  GROUP BY date, plant_part_SID
+  GROUP BY date, plant_part_SID,line
 )
 
 -- 3. Финальный SELECT
