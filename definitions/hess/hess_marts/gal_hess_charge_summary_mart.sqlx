@@ -139,6 +139,7 @@ SELECT
   e.Product_name,
   e.Product_number,
   e.job_number,
+  e.line,
 
   r.nomenclature_name,
   r.variation_name,
