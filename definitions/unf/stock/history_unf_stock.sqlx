@@ -147,7 +147,7 @@ to_insert AS (
     d.date,
     d.surrogate_key,
     CURRENT_DATETIME('Asia/Almaty') AS valid_from,
-    NULL AS valid_to,
+    CAST(NULL AS DATETIME) AS valid_to,
     TRUE AS is_current
   FROM diff d
   WHERE d.is_new = TRUE OR d.is_changed = TRUE
