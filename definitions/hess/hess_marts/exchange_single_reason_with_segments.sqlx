@@ -6,7 +6,7 @@ config {
 
 WITH reasons AS (
   SELECT *
-  FROM `galery-22579.gal_hess_statistic.Exchange_charge_single_reason_erp_history`
+  FROM  ${ref("hess_single_reason_erp_marts")} 
   WHERE is_current = TRUE
     AND dt_start IS NOT NULL
     AND charge_SID IS NOT NULL
@@ -17,8 +17,9 @@ segments AS (
     charge_sid,
     segment_number,
     dt_start AS segment_start,
-    dt_end AS segment_end
-  FROM `galery-22579.gal_hess_marts.normalized_charges3`
+    dt_end AS segment_end,
+    line
+  FROM ${ref("normalized_charges3")} 
 ),
 
 matched_segments AS (
@@ -60,6 +61,7 @@ SELECT
   valid_from,
   valid_to,
   is_current,
+  line,
   segment_number
 FROM ranked_matches
 WHERE rnk = 1
