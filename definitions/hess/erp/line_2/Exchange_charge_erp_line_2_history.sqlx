@@ -57,7 +57,7 @@ pre_operations {
             SAFE_CAST(charge_SID AS INT64) AS charge_SID,
             SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID,
 
-            PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', production_day) AS production_day,
+            TIMESTAMP(PARSE_DATE('%Y-%m-%d', production_day)) AS production_day,
             PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_start) AS dt_start,
             PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_end) AS dt_end,
 
@@ -112,7 +112,7 @@ WITH S_SRC AS (
         SAFE_CAST(charge_SID AS INT64) AS charge_SID,
         SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID,
 
-        PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', production_day) AS production_day,
+        TIMESTAMP(PARSE_DATE('%Y-%m-%d', production_day)) AS production_day,
         PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_start) AS dt_start,
         PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', dt_end) AS dt_end,
 
