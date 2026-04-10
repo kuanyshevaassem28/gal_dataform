@@ -1,0 +1,165 @@
+config {
+  type: "operations",
+  schema: "gal_wialon",
+  name: "history_wialon_unit_info",
+  hasOutput: true,
+  tags: ["wialon_unit_info", "wialon", "unit_info", "history", "scd2"],
+  description: "Wialon Unit Info — SCD-2 история, surrogate_key = name|vin.",
+  columns: {
+    name:                "Название юнита",
+    brand:               "Бренд",
+    registration_number: "Гос номер",
+    vehicle_type:        "Тип ТС",
+    VehicleID:           "VIN / ID",
+    is_active:           "Флаг активности",
+    surrogate_key:       "Business key",
+    is_current:          "Флаг текущей версии",
+    valid_from:          "Начало версии",
+    valid_to:            "Конец версии"
+  }
+}
+
+DECLARE run_dt DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty");
+
+-- создаём таблицу если нет
+CREATE TABLE IF NOT EXISTS ${self()} (
+  name STRING,
+  brand STRING,
+  registration_number STRING,
+  vehicle_type STRING,
+  VehicleID STRING,
+  is_active BOOL,
+  surrogate_key STRING,
+  is_current BOOL,
+  valid_from DATETIME,
+  valid_to DATETIME
+);
+
+MERGE ${self()} t
+USING (
+
+  WITH s AS (
+    SELECT
+      name,
+      brand,
+      registration_number,
+      vehicle_type,
+      vin AS VehicleID,
+
+      TRUE AS is_active,
+
+      -- 🔑 business key
+      TO_HEX(SHA256(CONCAT(
+        COALESCE(name, ''), '|',
+        COALESCE(vin, '')
+      ))) AS surrogate_key
+
+    FROM ${ref("external_staging_wialon_unit_info")}
+  ),
+
+  h_cur AS (
+    SELECT *
+    FROM ${self()}
+    WHERE is_current = TRUE
+  ),
+
+  diff AS (
+    SELECT
+      s.*,
+      h_cur.valid_from AS old_valid_from,
+
+      -- новый ключ
+      (h_cur.surrogate_key IS NULL) AS is_new,
+
+      -- изменения
+      (
+        h_cur.surrogate_key IS NOT NULL AND (
+             s.brand               IS DISTINCT FROM h_cur.brand
+          OR s.registration_number IS DISTINCT FROM h_cur.registration_number
+          OR s.vehicle_type        IS DISTINCT FROM h_cur.vehicle_type
+        )
+      ) AS is_changed
+
+    FROM s
+    LEFT JOIN h_cur
+      ON s.surrogate_key = h_cur.surrogate_key
+  ),
+
+  rows_to_merge AS (
+
+    -- 🔴 закрываем старую запись
+    SELECT
+      surrogate_key,
+      old_valid_from AS valid_from,
+      run_dt AS valid_to,
+      FALSE AS is_current,
+
+      NULL AS name,
+      NULL AS brand,
+      NULL AS registration_number,
+      NULL AS vehicle_type,
+      NULL AS VehicleID,
+      NULL AS is_active,
+
+      'U' AS op
+    FROM diff
+    WHERE is_changed = TRUE
+
+    UNION ALL
+
+    -- 🟢 вставляем новую
+    SELECT
+      surrogate_key,
+      run_dt AS valid_from,
+      NULL AS valid_to,
+      TRUE AS is_current,
+
+      name,
+      brand,
+      registration_number,
+      vehicle_type,
+      VehicleID,
+      is_active,
+
+      'I' AS op
+    FROM diff
+    WHERE is_new = TRUE OR is_changed = TRUE
+  )
+
+  SELECT * FROM rows_to_merge
+
+) s
+
+ON t.surrogate_key = s.surrogate_key
+AND t.valid_from   = s.valid_from
+
+WHEN MATCHED AND s.op = 'U' THEN
+  UPDATE SET
+    is_current = FALSE,
+    valid_to   = s.valid_to
+
+WHEN NOT MATCHED AND s.op = 'I' THEN
+  INSERT (
+    name,
+    brand,
+    registration_number,
+    vehicle_type,
+    VehicleID,
+    is_active,
+    surrogate_key,
+    is_current,
+    valid_from,
+    valid_to
+  )
+  VALUES (
+    s.name,
+    s.brand,
+    s.registration_number,
+    s.vehicle_type,
+    s.VehicleID,
+    s.is_active,
+    s.surrogate_key,
+    TRUE,
+    s.valid_from,
+    NULL
+  )
