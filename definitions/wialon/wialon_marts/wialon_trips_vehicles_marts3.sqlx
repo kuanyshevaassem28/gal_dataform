@@ -1,0 +1,305 @@
+config {
+  type: "table",
+  schema: "gal_wialon_marts",
+  name: "wialon_trips_vehicles_marts3",
+  columns: {
+    date: "Дата поездки (DATE)",
+    name: "Имя/наименование объекта (ТС) в Wialon",
+    brand: "Марка транспортного средства",
+    registration_number: "Регистрационный номер (сырой госномер) ТС",
+    vehicle_type: "Тип/категория транспортного средства",
+  
+    start_type: "Тип стартовой точки (адрес/геозона/координаты)",
+    start_pos: "Позиция старта (адрес/координаты) в источнике",
+    end_type: "Тип конечной точки (адрес/геозона/координаты)",
+    end_pos: "Позиция финиша (адрес/координаты) в источнике",
+  
+    registration_number_clean: "Нормализованный госномер (идентификатор машины для расчёта средних)",
+  
+    distance_km: "Пробег за поездку, км (> 10 км)",
+    dut_spent_lt: "Израсходованное топливо по ДУТ, литры",
+    dut_avg_lt_per_100km: "Средний расход по ДУТ, л/100 км (факт)",
+  
+    total_time_sec: "Общая длительность поездки, сек",
+    engine_time_sec: "Время работы двигателя, сек",
+    moving_time_sec: "Время движения, сек",
+    idle_time_sec: "Время простоя (холостой ход), сек",
+  
+    engine_start_time: "Время запуска двигателя",
+    engine_start_pos: "Позиция запуска двигателя",
+    engine_end_time: "Время остановки двигателя",
+    engine_end_pos: "Позиция остановки двигателя",
+  
+    sales_trip_count: "Количество поездок отгрузки (sales)",
+    receipt_trip_count: "Количество поездок поступления (receipt)",
+  
+    quantity_pallets: "Количество паллет",
+    quantity_beton: "Количество бетона",
+    quantity_t: "Количество в тоннах",
+  
+    sales_transport_name: "ТС по данным отгрузки",
+    receipt_transport_name: "ТС по данным поступления",
+    driver_name: "Имя водителя",
+  
+    total_trip_count: "Итоговое количество поездок",
+  
+    start_level_lt: "Уровень топлива на старте, литры",
+    end_level_lt: "Уровень топлива на финише, литры",
+    fuel_refueled_lt: "Дозаправка топлива, литры",
+    fuel_drained_lt: "Слив топлива, литры",
+  
+    status: "Статус поездки (Wialon)",
+    VehicleID: "Идентификатор автомобиля (MD)",
+  
+    // rolling averages
+    avg_consumption_vehicle_type_7_days: "Средний расход по типу ТС за 7 дней",
+    avg_consumption_vehicle_type_30_days: "Средний расход по типу ТС за 30 дней",
+  
+    avg_consumption_brand_vehicle_type_7_days: "Средний расход по марка+тип за 7 дней",
+    avg_consumption_brand_vehicle_type_30_days: "Средний расход по марка+тип за 30 дней",
+  
+    avg_consumption_vehicle_7_days: "Средний расход по машине за 7 дней",
+    avg_consumption_vehicle_30_days: "Средний расход по машине за 30 дней",
+  
+    // dispatcher
+    dispatcher_status_name: "Статус поездки (диспетчер)",
+    offline_reason_name: "Причина не на линии",
+    offline_is_planned: "Плановое отсутствие на линии",
+    offline_comment: "Комментарий (не на линии)",
+  
+    cl_comment: "Общий комментарий",
+    cl_recording: "Статус записи видео",
+    cl_gps: "Статус GPS",
+    cl_camera1: "Статус камеры 1",
+    cl_camera2: "Статус камеры 2",
+    cl_camera3: "Статус камеры 3",
+    all_cameras_ok: "Все камеры работают",
+  
+    // deviations
+    diff_pct_vehicle_type_7_days: "Отклонение от среднего по типу ТС (7 дней), %",
+    diff_pct_vehicle_type_30_days: "Отклонение от среднего по типу ТС (30 дней), %",
+  
+    diff_pct_brand_vehicle_type_7_days: "Отклонение от среднего по марка+тип (7 дней), %",
+    diff_pct_brand_vehicle_type_30_days: "Отклонение от среднего по марка+тип (30 дней), %",
+  
+    diff_pct_vehicle_7_days: "Отклонение от среднего по машине (7 дней), %",
+    diff_pct_vehicle_30_days: "Отклонение от среднего по машине (30 дней), %",
+  
+    cons_sanitized: "Очищенный расход, л/100 км (без артефактов)"
+}
+}
+ 
+WITH
+bounds AS (
+  SELECT * FROM  ${ref("external_vehicle_type_consumption_bounds")}  
+),
+
+trips AS (
+  SELECT
+    t.date AS trip_date,
+    t.name,
+    t.brand,
+    t.registration_number,
+    t.vehicle_type,
+    t.start_type,
+    t.start_pos,
+    t.end_type,
+    t.end_pos,
+    t.registration_number_clean,
+    t.distance_km,
+    t.dut_spent_lt,
+    t.dut_avg_lt_per_100km,
+    t.total_time_sec,
+    t.engine_time_sec,
+    t.moving_time_sec,
+    t.idle_time_sec,
+    t.engine_start_time,
+    t.engine_start_pos,
+    t.engine_end_time,
+    t.engine_end_pos,
+    t.sales_trip_count,
+    t.receipt_trip_count,
+    t.quantity_pallets,
+    t.quantity_beton,
+    t.quantity_t,
+    t.sales_transport_name,
+    t.receipt_transport_name,
+    t.driver_name,
+    t.total_trip_count,
+    t.start_level_lt,
+    t.end_level_lt,
+    t.fuel_refueled_lt,
+    t.fuel_drained_lt,
+    t.status,
+    t.dispatcher_status_name,
+    t.offline_reason_name,
+    t.offline_is_planned,
+    t.offline_comment,
+    t.cl_comment,
+    t.cl_recording,
+    t.cl_gps,
+    t.cl_camera1,
+    t.cl_camera2,
+    t.cl_camera3,
+    t.all_cameras_ok,
+    t.VehicleID,
+    -- подставим границы: если не нашли type — берём default
+    COALESCE(b.min_l100, bdef.min_l100) AS min_l100,
+    COALESCE(b.max_l100, bdef.max_l100) AS max_l100,
+
+    -- санитария расхода: нули и вне диапазона → NULL
+    CASE
+      WHEN t.dut_avg_lt_per_100km IS NULL THEN NULL
+      WHEN t.dut_avg_lt_per_100km = 0 THEN NULL
+      WHEN COALESCE(b.min_l100, bdef.min_l100) IS NOT NULL
+       AND t.dut_avg_lt_per_100km < COALESCE(b.min_l100, bdef.min_l100) THEN NULL
+      WHEN COALESCE(b.max_l100, bdef.max_l100) IS NOT NULL
+       AND t.dut_avg_lt_per_100km > COALESCE(b.max_l100, bdef.max_l100) THEN NULL
+      ELSE t.dut_avg_lt_per_100km
+    END AS cons_sanitized
+  FROM `galery-22579.gal_wialon_marts.wialon_trips_vehicles_marts2` t
+  LEFT JOIN bounds b
+    ON t.vehicle_type = b.vehicle_type
+  LEFT JOIN bounds bdef
+    ON bdef.vehicle_type = 'default'
+),
+
+trips_for_stats AS (
+  SELECT
+    t.*,
+    UNIX_DATE(t.trip_date) AS day_key
+  FROM trips t
+  WHERE distance_km > 10
+),
+
+-- окна по vehicle_type (считаем по очищенному cons_sanitized)
+veh_roll AS (
+  SELECT
+    vehicle_type,
+    trip_date,
+    AVG(cons_sanitized) OVER (
+      PARTITION BY vehicle_type
+      ORDER BY day_key
+      RANGE BETWEEN 7 PRECEDING AND 1 PRECEDING
+    )  AS avg_consumption_vehicle_type_7_days,
+    AVG(cons_sanitized) OVER (
+      PARTITION BY vehicle_type
+      ORDER BY day_key
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    )  AS avg_consumption_vehicle_type_30_days
+  FROM trips_for_stats
+),
+veh_daily AS (
+  SELECT
+    vehicle_type, trip_date,
+    MAX(avg_consumption_vehicle_type_7_days)  AS avg_consumption_vehicle_type_7_days,
+    MAX(avg_consumption_vehicle_type_30_days) AS avg_consumption_vehicle_type_30_days
+  FROM veh_roll
+  GROUP BY vehicle_type, trip_date
+),
+
+-- окна по brand+vehicle_type
+brand_veh_roll AS (
+  SELECT
+    brand, vehicle_type, trip_date,
+    AVG(cons_sanitized) OVER (
+      PARTITION BY brand, vehicle_type
+      ORDER BY day_key
+      RANGE BETWEEN 7 PRECEDING AND 1 PRECEDING
+    )  AS avg_consumption_brand_vehicle_type_7_days,
+    AVG(cons_sanitized) OVER (
+      PARTITION BY brand, vehicle_type
+      ORDER BY day_key
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    )  AS avg_consumption_brand_vehicle_type_30_days
+  FROM trips_for_stats
+),
+brand_veh_daily AS (
+  SELECT
+    brand, vehicle_type, trip_date,
+    MAX(avg_consumption_brand_vehicle_type_7_days)  AS avg_consumption_brand_vehicle_type_7_days,
+    MAX(avg_consumption_brand_vehicle_type_30_days) AS avg_consumption_brand_vehicle_type_30_days
+  FROM brand_veh_roll
+  GROUP BY brand, vehicle_type, trip_date
+),
+
+-- окна по той же машине (по cleaned госномеру)
+vehicle_roll AS (
+  SELECT
+    registration_number_clean, trip_date,
+    AVG(cons_sanitized) OVER (
+      PARTITION BY registration_number_clean
+      ORDER BY day_key
+      RANGE BETWEEN 7 PRECEDING AND 1 PRECEDING
+    )  AS avg_consumption_vehicle_7_days,
+    AVG(cons_sanitized) OVER (
+      PARTITION BY registration_number_clean
+      ORDER BY day_key
+      RANGE BETWEEN 30 PRECEDING AND 1 PRECEDING
+    )  AS avg_consumption_vehicle_30_days
+  FROM trips_for_stats
+),
+vehicle_daily AS (
+  SELECT
+    registration_number_clean, trip_date,
+    MAX(avg_consumption_vehicle_7_days)  AS avg_consumption_vehicle_7_days,
+    MAX(avg_consumption_vehicle_30_days) AS avg_consumption_vehicle_30_days
+  FROM vehicle_roll
+  GROUP BY registration_number_clean, trip_date
+)
+
+SELECT
+  -- исходные поля
+  t1.trip_date AS date,
+  t1.name, t1.brand, t1.registration_number, t1.vehicle_type,
+  t1.start_type, t1.start_pos, t1.end_type, t1.end_pos,
+  t1.registration_number_clean, t1.distance_km, t1.dut_spent_lt,
+  t1.dut_avg_lt_per_100km, t1.total_time_sec, t1.engine_time_sec,
+  t1.moving_time_sec, t1.idle_time_sec, t1.engine_start_time,
+  t1.engine_start_pos, t1.engine_end_time, t1.engine_end_pos,
+  t1.sales_trip_count, t1.receipt_trip_count, t1.quantity_pallets,
+  t1.quantity_beton, t1.quantity_t, t1.sales_transport_name,
+  t1.receipt_transport_name, t1.driver_name, t1.total_trip_count, t1.start_level_lt,
+  t1.end_level_lt, t1.fuel_refueled_lt, t1.fuel_drained_lt, t1.status, 
+    t1.dispatcher_status_name,
+    t1.offline_reason_name,
+    t1.offline_is_planned,
+    t1.offline_comment,
+    t1.cl_comment,
+    t1.cl_recording,
+    t1.cl_gps,
+    t1.cl_camera1,
+    t1.cl_camera2,
+    t1.cl_camera3,
+    t1.all_cameras_ok,
+    t1.VehicleID,
+  -- вспомогательное: какой расход вошёл в расчёты (для аудита)
+  t1.cons_sanitized,
+
+  -- скользящие средние
+  vt.avg_consumption_vehicle_type_7_days,
+  vt.avg_consumption_vehicle_type_30_days,
+  bv.avg_consumption_brand_vehicle_type_7_days,
+  bv.avg_consumption_brand_vehicle_type_30_days,
+  ve.avg_consumption_vehicle_7_days,
+  ve.avg_consumption_vehicle_30_days,
+
+  -- отклонения в %
+  SAFE_DIVIDE(t1.dut_avg_lt_per_100km - vt.avg_consumption_vehicle_type_7_days,
+                    vt.avg_consumption_vehicle_type_7_days) AS diff_pct_vehicle_type_7_days,
+  SAFE_DIVIDE(t1.dut_avg_lt_per_100km - vt.avg_consumption_vehicle_type_30_days,
+                    vt.avg_consumption_vehicle_type_30_days) AS diff_pct_vehicle_type_30_days,
+  SAFE_DIVIDE(t1.dut_avg_lt_per_100km - bv.avg_consumption_brand_vehicle_type_7_days,
+                    bv.avg_consumption_brand_vehicle_type_7_days) AS diff_pct_brand_vehicle_type_7_days,
+  SAFE_DIVIDE(t1.dut_avg_lt_per_100km - bv.avg_consumption_brand_vehicle_type_30_days,
+                    bv.avg_consumption_brand_vehicle_type_30_days) AS diff_pct_brand_vehicle_type_30_days,
+  SAFE_DIVIDE(t1.dut_avg_lt_per_100km - ve.avg_consumption_vehicle_7_days,
+                    ve.avg_consumption_vehicle_7_days) AS diff_pct_vehicle_7_days,
+  SAFE_DIVIDE(t1.dut_avg_lt_per_100km - ve.avg_consumption_vehicle_30_days,
+                    ve.avg_consumption_vehicle_30_days) AS diff_pct_vehicle_30_days
+
+FROM trips AS t1
+LEFT JOIN veh_daily       AS vt ON t1.vehicle_type = vt.vehicle_type AND t1.trip_date = vt.trip_date
+LEFT JOIN brand_veh_daily AS bv ON t1.brand = bv.brand AND t1.vehicle_type = bv.vehicle_type AND t1.trip_date = bv.trip_date
+LEFT JOIN vehicle_daily   AS ve ON t1.registration_number_clean = ve.registration_number_clean AND t1.trip_date = ve.trip_date
+ORDER BY t1.trip_date
