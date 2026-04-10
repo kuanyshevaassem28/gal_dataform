@@ -100,6 +100,7 @@ segments_with_data AS (
     b.Valid_from,
     b.Valid_to,
     b.is_current,
+    b.line,
     TIMESTAMP_DIFF(s.segment_end, s.segment_start, SECOND) AS segment_duration_sec,
     TIMESTAMP_DIFF(b.dt_end, b.dt_start, SECOND) AS total_duration_sec
   FROM segment_pairs s
@@ -154,6 +155,7 @@ SELECT
   v.Valid_from,
   v.Valid_to,
   v.is_current,
+  v.line,
   CASE WHEN v.segment_number = t.max_segment_number THEN v.value_0_seg + IFNULL(v.value_0 - t.total_0, 0) ELSE v.value_0_seg END AS value_0,
   CASE WHEN v.segment_number = t.max_segment_number THEN v.value_1_seg + IFNULL(v.value_1 - t.total_1, 0) ELSE v.value_1_seg END AS value_1,
   CASE WHEN v.segment_number = t.max_segment_number THEN v.value_2_seg + IFNULL(v.value_2 - t.total_2, 0) ELSE v.value_2_seg END AS value_2,
