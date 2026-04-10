@@ -18,7 +18,7 @@ plan_data AS (
         PARTITION BY CAST(document_number AS STRING), SAFE_CAST(document_date AS DATE)
         ORDER BY document_date DESC
       ) AS row_num
-    FROM  ${ref("external_production_plan_input")} 
+    FROM `galery-22579.gal_google_sheets.external_production_plan_input`
   )
   WHERE row_num = 1
 ),
@@ -31,13 +31,14 @@ pmg_data AS (
     ROUND(square_meters_per_pallet / layers_per_pallet, 3) AS units_per_layer,
     (pallet_gross_weight_kg - 16)/layers_per_pallet as norm_layer_weight,
     norm_cycle
-  FROM ${ref("external_packaging_material_registry")} 
+  FROM `galery-22579.gal_google_sheets.external_packaging_material_registry`
   WHERE manufacturer = "ПП3 Линия вибропрессования 1"
 ),
 
 -- причины из detailed
 reason_data AS (
   SELECT
+    line,
     charge_SID,
     segment_number,
     charge_sid_grouped,
@@ -74,8 +75,8 @@ reason_data AS (
     SUM(CASE WHEN LOWER(sz_reason) = 'f-mix' THEN duration_sec ELSE 0 END) AS F_Mix_time,
     SUM(CASE WHEN LOWER(sz_reason) = 'product eject' THEN duration_sec ELSE 0 END) AS Product_eject_time,
     SUM(duration_sec) AS all_time_reason
-  FROM ${ref("detailed_downtime_mart")}
-  GROUP BY charge_SID, segment_number, charge_sid_grouped, is_production_reason, plant_part_SID, date, nomenclature_name, variation_name, unit_name
+  FROM `galery-22579.gal_hess_marts.detailed_downtime_mart`
+  GROUP BY line, charge_SID, segment_number, charge_sid_grouped, is_production_reason, plant_part_SID, date, nomenclature_name, variation_name, unit_name
 ),
 
 -- партии с сегментами
@@ -95,9 +96,96 @@ erp_data AS (
       TIMESTAMP_DIFF(dt_end, dt_start, SECOND),
       NULLIF((value_1 + value_2 + value_3), 0)
     ) AS avg_cycle_time_sec
-  FROM  ${ref("normalized_charges3_materialized")} 
+  FROM `galery-22579.gal_hess_marts.normalized_charges3_materialized`
   WHERE is_current = TRUE
 ),
+
+ 
+ 
+pallet_layers AS (
+  SELECT line, pallet_SID, layer_sid
+  FROM `galery-22579.gal_hess_marts.hess_pallet_marts`,
+  UNNEST([
+    layer_SID_1, layer_SID_2, layer_SID_3, layer_SID_4, layer_SID_5,
+    layer_SID_6, layer_SID_7, layer_SID_8, layer_SID_9, layer_SID_10,
+    layer_SID_11, layer_SID_12, layer_SID_13, layer_SID_14, layer_SID_15,
+    layer_SID_16, layer_SID_17, layer_SID_18, layer_SID_19, layer_SID_20,
+    layer_SID_21, layer_SID_22, layer_SID_23, layer_SID_24, layer_SID_25
+  ]) AS layer_sid
+  WHERE layer_sid IS NOT NULL
+),
+
+  matched_layers AS (
+    SELECT 
+      l1.*, 
+      s.segment_number, 
+      pl.layer_sid IS NOT NULL AS used_in_any_pallet
+    FROM `galery-22579.gal_hess_marts.hess_layer_marts` l1
+    JOIN `galery-22579.gal_hess_marts.normalized_charges3` s
+      ON
+        l1.charge_SID_wet = s.charge_sid
+        AND l1.line = s.line
+        AND CAST(l1.timestamp AS TIMESTAMP) >= s.dt_start
+        AND CAST(l1.timestamp AS TIMESTAMP) <= s.dt_end
+    LEFT JOIN (
+  SELECT DISTINCT line, layer_sid
+  FROM pallet_layers
+) pl
+  ON l1.layer_SID = pl.layer_sid and l1.line = pl.line
+  ),
+
+  
+  erp_layers AS (
+    SELECT
+      charge.line,
+      charge.charge_SID,
+      charge.segment_number,
+      NULLIF(
+        COALESCE(NULLIF(charge.job_number, ''), NULLIF(l.job_wet, '')), '')
+        AS job_number,
+      EXTRACT(YEAR FROM charge.dt_start) AS year,
+      SUM(IF(l.layer_SID is not null, 1, 0)) AS layers_cnt_all,
+      SUM(IF(l.quality <>3, 1, 0)) AS layers_cnt_green,
+      SUM(
+        IF(
+          l.charge_sid_dry IS NOT NULL
+            AND l.quality <> 3
+            AND l.stacked IS NOT NULL,
+          1,
+          0))
+        AS layers_cnt_packed,
+      SUM(IF(l.used_in_any_pallet, 1, 0)) AS layers_cnt_used_in_pallets,
+      SUM(ifnull(weigh_shv, 0)) AS layers_weight_all,
+      SUM(IF(l.quality <>3, ifnull(weigh_shv, 0), 0)) AS layers_weight_green,
+      SUM(
+        IF(
+          l.charge_sid_dry IS NOT NULL
+            AND l.quality <> 3
+            AND l.stacked IS NOT NULL,
+          ifnull(weigh_shv, 0),
+          0))
+        AS layers_weight_packed,
+        SUM(IF(l.used_in_any_pallet, ifnull(weigh_shv, 0), 0)) AS layers_weight_used_in_pallets,
+    FROM
+      (
+        SELECT line, charge_SID, segment_number, job_number, dt_start
+        FROM `galery-22579.gal_hess_marts.normalized_charges3_materialized`
+        WHERE is_current = TRUE
+      ) as charge
+    LEFT JOIN matched_layers as l
+      ON
+        l.charge_SID_wet = charge.charge_SID
+        AND l.segment_number = charge.segment_number
+        and l.job_wet = charge.job_number
+        AND l.line = charge.line
+    GROUP BY
+      l.charge_SID_wet, l.segment_number, l.job_wet, l.line, charge.line,
+      charge.charge_SID, charge.segment_number, charge.job_number,
+      charge.dt_start
+  ),
+
+
+
 
 -- распределение веса замесов
 bsu_distributed AS (
@@ -118,13 +206,14 @@ bsu_distributed AS (
       NULLIF(SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID), 0)
     ) * (bsu.total_factweight / 1000.0) AS bsu_distributed_weight_t
   FROM erp_data e
-  LEFT JOIN ${ref("bsu_pp3_job_year_weight")} bsu
+  LEFT JOIN `galery-22579.gal_bsu_pp3_mart.bsu_pp3_job_year_weight` bsu
     ON e.job_number = bsu.av_zak
     AND EXTRACT(YEAR FROM e.production_day) = bsu.year_created
 )
 
 -- финальный SELECT
 SELECT
+  r.line,
   r.charge_SID,
   r.segment_number,
   r.charge_sid_grouped,
@@ -139,7 +228,6 @@ SELECT
   e.Product_name,
   e.Product_number,
   e.job_number,
-  e.line,
 
   r.nomenclature_name,
   r.variation_name,
@@ -221,7 +309,15 @@ END AS total_units,
   bd.job_share,
   bd.bsu_total_weight_t,
   bd.bsu_distributed_weight_t AS bsu_concreate_weight_distributed,
-  pm.norm_layer_weight * e.total_cycles as total_cycles_weight
+  pm.norm_layer_weight * e.total_cycles as total_cycles_weight,
+  el.layers_cnt_all,
+  el.layers_cnt_green,
+  el.layers_cnt_packed,
+  el.layers_cnt_used_in_pallets,
+  el.layers_weight_all,
+  el.layers_weight_green,
+  el.layers_weight_packed,
+  el.layers_weight_used_in_pallets
 
 FROM reason_data r
 LEFT JOIN erp_data e USING(charge_SID, segment_number)
@@ -239,3 +335,5 @@ LEFT JOIN pmg_data pm
       IF(STRPOS(pm.thickness, 'ММ') > 0, STRPOS(pm.thickness, 'ММ'), LENGTH(pm.thickness) + 1)
     ) - 1)
   )
+left join erp_layers el on el.line=r.line and 
+      el.charge_SID = r.charge_SID and el.segment_number = r.segment_number;
