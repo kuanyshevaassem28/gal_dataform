@@ -89,15 +89,48 @@ WITH S_SRC AS (
     CAST(shift_dry_number AS INT64)            AS shift_dry_number,
     CAST(charge_SID_dry AS INT64)              AS charge_SID_dry,
     CAST(quality AS INT64)                     AS quality,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)        AS timestamp,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)       AS to_chamber,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)     AS from_chamber,
 
-    -- FIX: dry_time должен быть NUMERIC (а не FLOAT64), чтобы совпасть со схемой history
-    SAFE_CAST(dry_time AS NUMERIC)             AS dry_time,
+    -- timestamp
+    CASE 
+      WHEN timestamp IS NULL OR timestamp = 'NaT' THEN NULL
+      ELSE COALESCE(
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', timestamp),
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)
+      )
+    END AS timestamp,
     
-    DATETIME(TIMESTAMP_SECONDS(stacked))          AS stacked,
-    DATETIME(TIMESTAMP_SECONDS(modified))         AS modified,
+    CASE 
+      WHEN to_chamber IS NULL OR to_chamber = 'NaT' THEN NULL
+      ELSE COALESCE(
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', to_chamber),
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)
+      )
+    END AS to_chamber,
+    
+    CASE 
+      WHEN from_chamber IS NULL OR from_chamber = 'NaT' THEN NULL
+      ELSE COALESCE(
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', from_chamber),
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)
+      )
+    END AS from_chamber,
+    
+    -- stacked / modified (nanoseconds → DATETIME)
+    CASE 
+      WHEN stacked IS NULL OR stacked = 0 THEN NULL
+      ELSE DATETIME(TIMESTAMP_MICROS(CAST(stacked / 1000 AS INT64)))
+    END AS stacked,
+    
+    CASE 
+      WHEN modified IS NULL OR modified = 0 THEN NULL
+      ELSE DATETIME(TIMESTAMP_MICROS(CAST(modified / 1000 AS INT64)))
+    END AS modified,
+    
+    -- dry_time
+    CASE 
+      WHEN dry_time < 0 THEN NULL
+      ELSE SAFE_CAST(dry_time AS NUMERIC)
+    END AS dry_time,
 
     CAST(previb_time AS FLOAT64)               AS previb_time,
     CAST(mainvib_time AS FLOAT64)              AS mainvib_time,
@@ -363,16 +396,48 @@ WITH S_SRC AS (
     CAST(shift_dry_number AS INT64)            AS shift_dry_number,
     CAST(charge_SID_dry AS INT64)              AS charge_SID_dry,
     CAST(quality AS INT64)                     AS quality,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)        AS timestamp,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)       AS to_chamber,
-    PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)     AS from_chamber,
-
-    -- FIX: dry_time = NUMERIC
-    SAFE_CAST(dry_time AS NUMERIC)             AS dry_time,
-
     
-    DATETIME(TIMESTAMP_SECONDS(stacked))          AS stacked,
-    DATETIME(TIMESTAMP_SECONDS(modified))         AS modified,
+    -- timestamp
+    CASE 
+      WHEN timestamp IS NULL OR timestamp = 'NaT' THEN NULL
+      ELSE COALESCE(
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', timestamp),
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)
+      )
+    END AS timestamp,
+    
+    CASE 
+      WHEN to_chamber IS NULL OR to_chamber = 'NaT' THEN NULL
+      ELSE COALESCE(
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', to_chamber),
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)
+      )
+    END AS to_chamber,
+    
+    CASE 
+      WHEN from_chamber IS NULL OR from_chamber = 'NaT' THEN NULL
+      ELSE COALESCE(
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', from_chamber),
+        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)
+      )
+    END AS from_chamber,
+    
+    -- stacked / modified (nanoseconds → DATETIME)
+    CASE 
+      WHEN stacked IS NULL OR stacked = 0 THEN NULL
+      ELSE DATETIME(TIMESTAMP_MICROS(CAST(stacked / 1000 AS INT64)))
+    END AS stacked,
+    
+    CASE 
+      WHEN modified IS NULL OR modified = 0 THEN NULL
+      ELSE DATETIME(TIMESTAMP_MICROS(CAST(modified / 1000 AS INT64)))
+    END AS modified,
+    
+    -- dry_time
+    CASE 
+      WHEN dry_time < 0 THEN NULL
+      ELSE SAFE_CAST(dry_time AS NUMERIC)
+    END AS dry_time,
 
     CAST(previb_time AS FLOAT64)               AS previb_time,
     CAST(mainvib_time AS FLOAT64)              AS mainvib_time,
