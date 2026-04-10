@@ -68,6 +68,7 @@ aggregated_erp AS (
     base.plant_part_SID,
     base.reason,
     base.sz_reason,
+    base.line,
     MIN(base.dt_start_trimmed) AS dt_start,
     MAX(base.dt_end_trimmed) AS dt_end,
     COUNT(*) AS events_count,
@@ -80,13 +81,13 @@ aggregated_erp AS (
     ) AS duration_sec
   FROM trimmed_single_reasons base
   LEFT JOIN (
-    SELECT charge_SID, segment_number, job_number
+    SELECT charge_SID, segment_number, job_number, line
     FROM ${ref("normalized_charges3_materialized")} 
     WHERE is_current = TRUE
   ) charge
-    ON base.charge_SID = charge.charge_SID and base.segment_number = charge.segment_number
+    ON base.charge_SID = charge.charge_SID and base.segment_number = charge.segment_number and base.line = line
   GROUP BY
-    base.charge_SID, base.segment_number, job_number, base.plant_part_SID, base.reason, base.sz_reason
+    base.charge_SID, base.segment_number, job_number, base.plant_part_SID, base.reason, base.sz_reason, base.line
 ),
 
 
@@ -111,6 +112,7 @@ SELECT
   erp.charge_SID,
   erp.job_number,
   erp.segment_number,
+  erp.line,
   erp.plant_part_SID,
   erp.reason,
   erp.sz_reason,
