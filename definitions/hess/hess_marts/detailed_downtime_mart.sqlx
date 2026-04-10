@@ -171,4 +171,3 @@ LEFT JOIN unf_products pp
   ON erp.job_number = pp.document_number
      AND EXTRACT(YEAR FROM erp.dt_start) = EXTRACT(YEAR FROM pp.document_date)
      AND LOWER(reasons.group) <> 'stop'
-;
