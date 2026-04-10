@@ -15,7 +15,7 @@ sorted_wet AS (
     nomenclature_name,
     variation_name,
     ROW_NUMBER() OVER (PARTITION BY date ORDER BY dt_start) AS rn
-  FROM `galery-22579.gal_hess_marts.gal_hess_charge_summary_mart`
+  FROM ${ref("gal_hess_charge_summary_mart")} 
   WHERE plant_part_SID = 101
     AND charge_sid_grouped = CAST(charge_SID AS STRING)
     AND nomenclature_name IS NOT NULL
@@ -100,7 +100,7 @@ aggregated AS (
     MIN(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN dt_start ELSE NULL END) AS dt_start,
     MAX(CASE WHEN charge_sid_grouped = CAST(charge_SID AS STRING) THEN dt_end ELSE NULL END) AS dt_end
 
-  FROM `galery-22579.gal_hess_marts.gal_hess_charge_summary_mart`
+  FROM ${ref("gal_hess_charge_summary_mart")} 
   GROUP BY date, line, plant_part_SID
 )
 
