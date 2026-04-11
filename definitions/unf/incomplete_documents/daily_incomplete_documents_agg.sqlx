@@ -1,7 +1,7 @@
 config {
   type: "operation",
   schema: "gal_unf_marts",
-  name: "daily_incomplete_documents_agg_upsert",
+  name: "daily_incomplete_documents_agg",
   tags: ["unf_incomplete_documents", "unf", "incomplete_documents", "marts", "daily_agg"]
 }
 
