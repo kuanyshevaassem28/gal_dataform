@@ -1,64 +1,32 @@
 config {
-  type: "operation",
+  type: "incremental",
   schema: "gal_unf_marts",
   name: "daily_incomplete_documents_agg",
-  tags: ["unf_incomplete_documents", "unf", "incomplete_documents", "marts", "daily_agg"]
+  uniqueKey: ["run_date", "manager_name"]
 }
 
-MERGE ${ref("daily_incomplete_documents_agg")} T
-USING (
-
-  WITH base AS (
-    SELECT
-      manager_name,
-      COALESCE(
-        DATE(SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(document_datetime AS STRING))),
-        DATE(SAFE.PARSE_DATETIME('%d.%m.%Y %H:%M:%S', CAST(document_datetime AS STRING))),
-        SAFE.PARSE_DATE('%Y-%m-%d', CAST(document_date AS STRING)),
-        SAFE.PARSE_DATE('%d.%m.%Y', CAST(document_date AS STRING)),
-        date
-      ) AS doc_date
-    FROM ${ref("history_unf_incomplete_documents")}
-    WHERE is_current = TRUE
-  ),
-
-  agg AS (
-    SELECT
-      CURRENT_DATE('Asia/Almaty') AS run_date,
-      manager_name,
-      COUNT(*) AS total_docs,
-      COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) < 60) AS lt_60,
-      COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) BETWEEN 60 AND 180) AS d60_180,
-      COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) BETWEEN 181 AND 360) AS d181_360,
-      COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) > 360) AS gt_360
-    FROM base
-    GROUP BY manager_name
-  )
-
+WITH base AS (
   SELECT
-    run_date,
     manager_name,
-    total_docs,
-    lt_60,
-    d60_180,
-    d181_360,
-    gt_360
-  FROM agg
+    COALESCE(
+      DATE(SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%S', CAST(document_datetime AS STRING))),
+      DATE(SAFE.PARSE_DATETIME('%d.%m.%Y %H:%M:%S', CAST(document_datetime AS STRING))),
+      SAFE.PARSE_DATE('%Y-%m-%d', CAST(document_date AS STRING)),
+      SAFE.PARSE_DATE('%d.%m.%Y', CAST(document_date AS STRING)),
+      date
+    ) AS doc_date
+  FROM ${ref("history_unf_incomplete_documents")}
+  WHERE is_current = TRUE
+)
 
-) S
-
-ON  T.run_date = S.run_date
-AND COALESCE(T.manager_name, '') = COALESCE(S.manager_name, '')
-
-WHEN MATCHED THEN UPDATE SET
-  total_docs = S.total_docs,
-  lt_60      = S.lt_60,
-  d60_180    = S.d60_180,
-  d181_360   = S.d181_360,
-  gt_360     = S.gt_360,
-  created_at = CURRENT_TIMESTAMP()
-
-WHEN NOT MATCHED THEN INSERT
-  (run_date, manager_name, total_docs, lt_60, d60_180, d181_360, gt_360, created_at)
-VALUES
-  (S.run_date, S.manager_name, S.total_docs, S.lt_60, S.d60_180, S.d181_360, S.gt_360, CURRENT_TIMESTAMP())
+SELECT
+  CURRENT_DATE('Asia/Almaty') AS run_date,
+  manager_name,
+  COUNT(*) AS total_docs,
+  COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) < 60) AS lt_60,
+  COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) BETWEEN 60 AND 180) AS d60_180,
+  COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) BETWEEN 181 AND 360) AS d181_360,
+  COUNTIF(doc_date IS NOT NULL AND DATE_DIFF(CURRENT_DATE('Asia/Almaty'), doc_date, DAY) > 360) AS gt_360,
+  CURRENT_TIMESTAMP() AS created_at
+FROM base
+GROUP BY manager_name
