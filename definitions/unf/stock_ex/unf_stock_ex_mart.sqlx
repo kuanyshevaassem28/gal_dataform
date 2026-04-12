@@ -30,7 +30,7 @@ config {
 }
 
 SELECT
-  se.owner_name,a
+  se.owner_name,
   se.stock_name,
   se.cell_name,
   se.nomenclature_name,
