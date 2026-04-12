@@ -39,25 +39,25 @@ WITH s AS (
   SELECT
     SAFE_CAST(ID AS INT64) AS ID,
 
-    -- ✅ универсальный timestamp (FIX)
     COALESCE(
 
+      -- строки даты
       SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
       SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
       SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
-
+    
+      -- unix timestamp (только если реально число)
       IF(
         REGEXP_CONTAINS(CAST(timestamp AS STRING), r'^[0-9]+$'),
         CASE
           WHEN LENGTH(CAST(timestamp AS STRING)) > 10
-            THEN TIMESTAMP_MICROS(CAST(timestamp AS INT64))
-          ELSE TIMESTAMP_SECONDS(CAST(timestamp AS INT64))
+            THEN TIMESTAMP_MICROS(SAFE_CAST(CAST(timestamp AS STRING) AS INT64))
+          ELSE TIMESTAMP_SECONDS(SAFE_CAST(CAST(timestamp AS STRING) AS INT64))
         END,
         NULL
       )
-
+    
     ) AS timestamp,
-
     SAFE_CAST(pallet_SID AS INT64) AS pallet_SID,
     SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID
 
