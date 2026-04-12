@@ -20,7 +20,6 @@ config {
 
 DECLARE run_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP();
 
-
 CREATE TABLE IF NOT EXISTS ${self()} (
   ID INT64,
   timestamp TIMESTAMP,
@@ -32,7 +31,6 @@ CREATE TABLE IF NOT EXISTS ${self()} (
   line STRING
 );
 
-
 MERGE ${self()} t
 USING (
 
@@ -41,30 +39,24 @@ WITH s AS (
   SELECT
     SAFE_CAST(ID AS INT64) AS ID,
 
-  COALESCE(
+    -- ✅ универсальный timestamp (FIX)
+    COALESCE(
 
-  -- если уже TIMESTAMP → просто берём
-  IF(
-    SAFE_CAST(timestamp AS STRING) LIKE '%-%',
-    SAFE_CAST(timestamp AS TIMESTAMP),
-    NULL
-  ),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
 
-  -- строки с временем
-  SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
-  SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
-  SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
+      IF(
+        REGEXP_CONTAINS(CAST(timestamp AS STRING), r'^[0-9]+$'),
+        CASE
+          WHEN LENGTH(CAST(timestamp AS STRING)) > 10
+            THEN TIMESTAMP_MICROS(CAST(timestamp AS INT64))
+          ELSE TIMESTAMP_SECONDS(CAST(timestamp AS INT64))
+        END,
+        NULL
+      )
 
-  -- unix timestamp (ТОЛЬКО если число)
-  IF(
-    REGEXP_CONTAINS(CAST(timestamp AS STRING), r'^[0-9]+$'),
-    TIMESTAMP_SECONDS(CAST(timestamp AS INT64)),
-    NULL
-  )
-
-) AS timestamp,
-
-
+    ) AS timestamp,
 
     SAFE_CAST(pallet_SID AS INT64) AS pallet_SID,
     SAFE_CAST(plant_part_SID AS INT64) AS plant_part_SID
@@ -74,16 +66,24 @@ WITH s AS (
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY SAFE_CAST(ID AS INT64)
     ORDER BY
-COALESCE(
-  SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
-  SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
-  SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
-  IF(
-    REGEXP_CONTAINS(CAST(timestamp AS STRING), r'^[0-9]+$'),
-    TIMESTAMP_SECONDS(CAST(timestamp AS INT64)),
-    NULL
-  )
-) DESC
+
+    -- ✅ тот же фикс здесь
+    COALESCE(
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CAST(timestamp AS STRING)),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S', CAST(timestamp AS STRING)),
+      SAFE.PARSE_TIMESTAMP('%Y-%m-%d', CAST(timestamp AS STRING)),
+
+      IF(
+        REGEXP_CONTAINS(CAST(timestamp AS STRING), r'^[0-9]+$'),
+        CASE
+          WHEN LENGTH(CAST(timestamp AS STRING)) > 10
+            THEN TIMESTAMP_MICROS(CAST(timestamp AS INT64))
+          ELSE TIMESTAMP_SECONDS(CAST(timestamp AS INT64))
+        END,
+        NULL
+      )
+    ) DESC
+
   ) = 1
 
 ),
@@ -118,7 +118,7 @@ diff AS (
 
 rows_to_merge AS (
 
-  -- закрываем старую версию
+  -- закрытие старой версии
   SELECT
     ID,
     old_valid_from AS valid_from,
@@ -135,11 +135,9 @@ rows_to_merge AS (
   FROM diff
   WHERE is_changed = TRUE
 
-
   UNION ALL
 
-
-  -- вставляем новую версию
+  -- вставка новой версии
   SELECT
     ID,
     run_dt AS valid_from,
@@ -162,20 +160,16 @@ SELECT * FROM rows_to_merge
 
 ) s
 
-
 ON t.ID = s.ID
 AND t.is_current = TRUE
-
 
 WHEN MATCHED AND s.op = 'U'
 THEN UPDATE SET
   is_current = FALSE,
   valid_to = s.valid_to
 
-
 WHEN NOT MATCHED AND s.op = 'I'
 THEN INSERT (
-
   ID,
   timestamp,
   pallet_SID,
@@ -184,10 +178,8 @@ THEN INSERT (
   line,
   valid_from,
   valid_to
-
 )
 VALUES (
-
   s.ID,
   s.timestamp,
   s.pallet_SID,
@@ -196,5 +188,4 @@ VALUES (
   s.line,
   s.valid_from,
   NULL
-
 );
