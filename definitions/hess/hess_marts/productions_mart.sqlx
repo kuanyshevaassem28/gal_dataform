@@ -47,12 +47,12 @@ layers AS (
 ),
 pmg_data AS (
     SELECT
-        manufacturer,
+        manufacturer_name as manufacturer,
         nomenclature_name,
         thickness,
-        ROUND(square_meters_per_pallet / layers_per_pallet, 3) AS units_per_layer,
-        (pallet_gross_weight_kg - 16)/layers_per_pallet AS norm_layer_weight
-    FROM  ${ref("external_packaging_material_registry")}  
+        ROUND(quantity_in_pallet / layers_count_in_pallet, 3) AS units_per_layer,
+        (pallet_weight - 16)/layers_count_in_pallet AS norm_layer_weight
+    FROM  ${ref("unf_production_standards_marts")} where period = (SELECT MAX(period) FROM ${ref("unf_production_standards_marts")})
     
 ),
 wet_cycles AS (
