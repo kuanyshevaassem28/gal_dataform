@@ -137,5 +137,5 @@ SELECT
   , 86400)), 0) AS fact_to_plan_ratio_by_time
 
 FROM aggregated a
-LEFT JOIN transitions t ON a.date = t.date
+LEFT JOIN transitions t ON a.date = t.date AND a.line = t.line
 ORDER BY a.date, a.plant_part_SID
