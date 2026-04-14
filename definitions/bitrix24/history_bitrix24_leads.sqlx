@@ -6,9 +6,6 @@ config {
   description: "SCD2 история лидов Bitrix24. surrogate_key = SHA256(ID). Телефоны нормализуются."
 }
 
-BEGIN
-
-
 CREATE TEMP TABLE stg AS
 WITH base AS (
   SELECT
@@ -317,5 +314,4 @@ WHEN MATCHED AND (
 THEN UPDATE SET
   is_current = FALSE,
   valid_to   = CURRENT_DATETIME()
-
-END;
+;
