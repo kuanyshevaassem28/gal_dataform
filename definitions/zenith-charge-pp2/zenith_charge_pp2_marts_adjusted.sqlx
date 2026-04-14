@@ -3,9 +3,16 @@ config {
   schema: "gal_zenith_marts",
   name: "zenith_charge_pp2_marts_adjusted",
   tags: ["zenith", "charge_pp2", "zenith_charge_pp2"],
-  description: "Детализированный март Zenith PP2 с разбиением по сменам и пропорциональным распределением метрик"
+  description: "Детализированный март Zenith PP2 с разбиением по сменам и пропорциональным распределением метрик",
+  bigquery: {
+    partitionBy: "date",
+    clusterBy: ["plant_part_SID", "shift_number", "job_number"]
+  }
 }
 
+pre_operations {
+  DROP TABLE IF EXISTS `galery-22579.gal_zenith_marts.zenith_charge_pp2_marts_adjusted`;
+}
 
 WITH zenith_base AS (
   SELECT
