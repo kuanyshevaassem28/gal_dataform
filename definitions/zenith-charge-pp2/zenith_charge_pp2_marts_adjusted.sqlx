@@ -6,19 +6,16 @@ config {
   description: "Детализированный март Zenith PP2 с разбиением по сменам и пропорциональным распределением метрик"
 }
 
+
 WITH zenith_base AS (
   SELECT
     *,
     ROW_NUMBER() OVER (ORDER BY bde_started) AS row_id,
     101 AS plant_part_SID,
     DATE(bde_started) AS production_day,
-    CASE 
-      WHEN TIME(bde_started) BETWEEN TIME '08:00:00' AND TIME '19:59:59' THEN 1 
-      ELSE 2 
-    END AS shift_number
-  FROM ${ref("zenith_charge_pp2_marts")}
+    CASE WHEN TIME(bde_started) BETWEEN TIME '08:00:00' AND TIME '19:59:59' THEN 1 ELSE 2 END AS shift_number
+  FROM  ${ref("zenith_charge_pp2_marts")}
 ),
-
 unf_products AS (
   SELECT *
   FROM (
@@ -28,30 +25,24 @@ unf_products AS (
         PARTITION BY document_number, EXTRACT(YEAR FROM document_date)
         ORDER BY quantity DESC
       ) AS rn
-    FROM ${ref("history_unf_production_products")}
+    FROM ${ref("history_unf_production_products")} 
     WHERE is_current = TRUE
   )
   WHERE rn = 1
 ),
-
 zames_with_avzak AS (
-  SELECT 
-    DATETIME(az.ZAMSTUNLTIME) AS ZAMSTUNLTIME_DT, 
-    jt.AV_ZAK
-  FROM ${ref("history_bsu_pp2_arc_zames")} az
-  JOIN ${ref("history_bsu_pp2_job_title")} jt
+  SELECT DATETIME(az.ZAMSTUNLTIME) AS ZAMSTUNLTIME_DT, jt.AV_ZAK
+  FROM `galery-22579.gal_bsu_pp2.history_bsu_pp2_arc_zames` az
+  JOIN `galery-22579.gal_bsu_pp2.history_bsu_pp2_job_title` jt
     ON az.ZAKASID = jt.ORDERID
-  WHERE az.is_current = TRUE 
-    AND jt.is_current = TRUE
+  WHERE az.is_current = TRUE AND jt.is_current = TRUE
 ),
 
 zames_hits AS (
   SELECT z.file_name, a.AV_ZAK
   FROM zenith_base z
   JOIN zames_with_avzak a
-    ON a.ZAMSTUNLTIME_DT 
-       BETWEEN z.bde_started 
-       AND COALESCE(z.bde_stopped, DATETIME '2030-01-01')
+    ON a.ZAMSTUNLTIME_DT BETWEEN z.bde_started AND COALESCE(z.bde_stopped, DATETIME '2030-01-01')
 ),
 
 zames_counts AS (
@@ -61,37 +52,23 @@ zames_counts AS (
 ),
 
 zames_ranked AS (
-  SELECT 
-    file_name, 
-    AV_ZAK,
-    ROW_NUMBER() OVER (
-      PARTITION BY file_name 
-      ORDER BY zames_count DESC, AV_ZAK
-    ) AS rn
+  SELECT file_name, AV_ZAK,
+         ROW_NUMBER() OVER (PARTITION BY file_name ORDER BY zames_count DESC, AV_ZAK) AS rn
   FROM zames_counts
 ),
 
 av_zak_mapping AS (
-  SELECT file_name, AV_ZAK 
-  FROM zames_ranked 
-  WHERE rn = 1
+  SELECT file_name, AV_ZAK FROM zames_ranked WHERE rn = 1
 ),
 
 measurement_matches_deduped AS (
   SELECT ui_Measurement_ID, file_name
   FROM (
-    SELECT 
-      m.ui_Measurement_ID, 
-      z.file_name,
-      ROW_NUMBER() OVER (
-        PARTITION BY m.ui_Measurement_ID 
-        ORDER BY z.bde_started
-      ) AS rn
-    FROM ${ref("history_measurements")} m
+    SELECT m.ui_Measurement_ID, z.file_name,
+           ROW_NUMBER() OVER (PARTITION BY m.ui_Measurement_ID ORDER BY z.bde_started) AS rn
+    FROM `galery-22579.gal_rw.history_measurements` m
     JOIN zenith_base z
-      ON CAST(m.Measurement_Time AS DATETIME) 
-         BETWEEN z.bde_started 
-         AND COALESCE(z.bde_stopped, DATETIME '2030-01-01')
+      ON CAST(m.Measurement_Time AS DATETIME) BETWEEN z.bde_started AND COALESCE(z.bde_stopped, DATETIME '2030-01-01')
     WHERE m.Site_ID = 2
   )
   WHERE rn = 1
@@ -107,13 +84,10 @@ classified_quality AS (
     SUM(CASE WHEN GREATEST(IFNULL(h.Signal_Light_Total,0), IFNULL(w.Signal_Weight_Light_Total,0)) < 4 THEN Concrete_Weight_Board_1 ELSE 0 END) AS green_weight,
     SUM(CASE WHEN GREATEST(IFNULL(h.Signal_Light_Total,0), IFNULL(w.Signal_Weight_Light_Total,0)) >= 4 THEN Concrete_Weight_Board_1 ELSE 0 END) AS red_weight
   FROM measurement_matches_deduped mm
-  LEFT JOIN ${ref("rw_results_height_marts")}  h ON mm.ui_Measurement_ID = h.measurement_id
-  LEFT JOIN ${ref("rw_results_weight_marts")} w ON mm.ui_Measurement_ID = w.measurement_id
+  LEFT JOIN `galery-22579.gal_rw_marts.rw_results_height_marts`  h ON mm.ui_Measurement_ID = h.measurement_id
+  LEFT JOIN `galery-22579.gal_rw_marts.rw_results_weight_marts` w ON mm.ui_Measurement_ID = w.measurement_id
   GROUP BY mm.file_name
 ),
-
--- ⚠️ ВСЯ ОСТАЛЬНАЯ ЛОГИКА БЕЗ ИЗМЕНЕНИЙ
--- (она у тебя идеальная — оставляем как есть)
 
 base_data AS (
   SELECT
@@ -389,12 +363,13 @@ finalized AS (
   FROM base_summed a
 )
 
+-- ===== 8) Результат =====
 SELECT
   charge_SID,
-  seg_idx AS segment_number,
-  CAST(charge_SID AS STRING) AS charge_sid_grouped,
+  seg_idx as segment_number,
+  cast(charge_SID as string) as charge_sid_grouped,
   plant_part_SID,
-  production_day AS date,
+  production_day as date,
   dt_start,
   dt_end,
   production_day,
@@ -408,10 +383,9 @@ SELECT
   pp.nomenclature_name,
   pp.variation_name,
   pp.unit_name,
-  value_0, value_1, value_2, value_3, value_4, value_5,
-  median_weight,
-  green_weight,
-  red_weight,
+  value_0, value_1, value_2, value_3, value_4, value_5,median_weight,green_weight,red_weight,
+
+
   automatic_operation,
   manual_operation,
   setup_operation,
@@ -423,4 +397,5 @@ SELECT
 FROM finalized
 LEFT JOIN unf_products pp
   ON finalized.job_number = pp.document_number
- AND EXTRACT(YEAR FROM finalized.dt_start) = EXTRACT(YEAR FROM pp.document_date)
+     AND EXTRACT(YEAR FROM finalized.dt_start) = EXTRACT(YEAR FROM pp.document_date)    
+ORDER BY dt_start DESC
