@@ -405,4 +405,4 @@ FROM finalized
 LEFT JOIN unf_products pp
   ON finalized.job_number = pp.document_number
      AND EXTRACT(YEAR FROM finalized.dt_start) = EXTRACT(YEAR FROM pp.document_date)    
-ORDER BY dt_start DESC
+
