@@ -6,6 +6,7 @@ config {
   tags: ["rw", "rw_measurements", "history", "scd2"]
 }
 
+DECLARE run_ts DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty"); 
 -- 1️⃣ Создаём таблицу если нет
 
 CREATE TABLE IF NOT EXISTS ${self()} (
@@ -85,7 +86,7 @@ WHEN MATCHED
 AND s.row_hash IS DISTINCT FROM h.row_hash
 THEN UPDATE SET
   is_current = FALSE,
-  valid_to = CURRENT_DATETIME("Asia/Almaty");
+  valid_to = run_ts;
 
 -- 3️⃣ Вставляем новые и изменённые
 INSERT INTO ${self()}
@@ -135,7 +136,7 @@ SELECT
   s.surrogate_key,
   s.row_hash,
   TRUE,
-  CURRENT_DATETIME("Asia/Almaty"),
+  run_ts,
   NULL
 
 FROM (
