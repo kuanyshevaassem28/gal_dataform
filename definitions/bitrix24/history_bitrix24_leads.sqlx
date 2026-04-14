@@ -8,111 +8,314 @@ config {
 
 BEGIN
 
--- ============================================================
--- 1. STAGING (твой pipeline без изменений)
--- ============================================================
 
 CREATE TEMP TABLE stg AS
-
-WITH S_SRC AS (
-  SELECT *
-  FROM ${ref("external_staging_bitrix24_leads")}
-),
-
-base AS (
+WITH base AS (
   SELECT
     s.*,
+
+    -- Универсально достаём "сырой телефон" из PHONE любого типа
     NULLIF(
       REGEXP_EXTRACT(
         TO_JSON_STRING(s.PHONE),
-        r'(\\+?\\d[\\d\\-\\(\\)\\s]{6,}\\d)'
-      ),''
+        r'(\+?\d[\d\-\(\)\s]{6,}\d|\b\d{10,12}\b|\b\d{6}\b|\b\d{2}[\s\-.]\d{2}[\s\-.]\d{2}\b|\b\d{3}[\s\-.]\d{3}\b)'
+      ),
+      ''
     ) AS phone_value_raw
-  FROM S_SRC s
+
+  FROM `galery-22579.gal_bitrix24.external_staging_bitrix24_leads` s
+),
+
+
+chunks AS (
+  SELECT
+    b.*,
+    ARRAY(
+      SELECT AS STRUCT x AS chunk, off
+      FROM UNNEST(REGEXP_EXTRACT_ALL(
+        CAST(b.phone_value_raw AS STRING),
+        r'(\+?\d[\d\-\(\)\s]{6,}\d|\b\d{10,12}\b|\b\d{6}\b|\b\d{2}[\s\-.]\d{2}[\s\-.]\d{2}\b|\b\d{3}[\s\-.]\d{3}\b)'
+      )) AS x WITH OFFSET AS off
+    ) AS phone_chunks
+  FROM base b
 ),
 
 normalized AS (
   SELECT
-    b.*,
-    REGEXP_REPLACE(phone_value_raw,r'\\D','') AS phone_digits
-  FROM base b
+    c.*,
+    ARRAY(
+      SELECT AS STRUCT
+        s3.chunk,
+        s3.off,
+        s3.phone_value_e164,
+        s3.phone_value_pretty
+      FROM (
+        SELECT
+          s2.*,
+
+          CASE
+            WHEN s2.phone_digits_norm IS NULL THEN NULL
+            WHEN LENGTH(s2.phone_digits_norm) = 11 AND STARTS_WITH(s2.phone_digits_norm, '77172')
+              THEN CONCAT('+', s2.phone_digits_norm)
+            WHEN STARTS_WITH(s2.phone_digits_norm, '7') AND LENGTH(s2.phone_digits_norm) IN (11, 12)
+              THEN CONCAT('+', s2.phone_digits_norm)
+            ELSE NULL
+          END AS phone_value_e164,
+
+          CASE
+            WHEN s2.phone_digits_norm IS NULL THEN NULL
+
+            WHEN LENGTH(s2.phone_digits_norm) = 11 AND STARTS_WITH(s2.phone_digits_norm, '77172') THEN
+              FORMAT('+7 7172 %s %s', SUBSTR(s2.phone_digits_norm, 6, 3), SUBSTR(s2.phone_digits_norm, 9, 3))
+
+            WHEN LENGTH(s2.phone_digits_norm) = 11 AND STARTS_WITH(s2.phone_digits_norm, '7') THEN
+              FORMAT(
+                '+7 %s %s %s %s',
+                SUBSTR(s2.phone_digits_norm, 2, 3),
+                SUBSTR(s2.phone_digits_norm, 5, 3),
+                SUBSTR(s2.phone_digits_norm, 8, 2),
+                SUBSTR(s2.phone_digits_norm, 10, 2)
+              )
+
+            WHEN LENGTH(s2.phone_digits_norm) = 12 AND STARTS_WITH(s2.phone_digits_norm, '7') THEN
+              FORMAT(
+                '+7 %s %s %s',
+                SUBSTR(s2.phone_digits_norm, 2, 4),
+                SUBSTR(s2.phone_digits_norm, 6, 3),
+                SUBSTR(s2.phone_digits_norm, 9, 3)
+              )
+
+            ELSE NULL
+          END AS phone_value_pretty
+        FROM (
+          SELECT
+            s1.*,
+            CASE
+              WHEN s1.phone_digits_raw IS NULL THEN NULL
+              WHEN LENGTH(s1.phone_digits_raw) = 6
+                THEN CONCAT('77172', s1.phone_digits_raw)
+              WHEN LENGTH(s1.phone_digits_raw) = 11 AND STARTS_WITH(s1.phone_digits_raw, '8')
+                THEN CONCAT('7', SUBSTR(s1.phone_digits_raw, 2))
+              WHEN LENGTH(s1.phone_digits_raw) = 11 AND STARTS_WITH(s1.phone_digits_raw, '7')
+                THEN s1.phone_digits_raw
+              WHEN LENGTH(s1.phone_digits_raw) = 10
+                THEN CONCAT('7', s1.phone_digits_raw)
+              WHEN LENGTH(s1.phone_digits_raw) = 12 AND STARTS_WITH(s1.phone_digits_raw, '8')
+                THEN CONCAT('7', SUBSTR(s1.phone_digits_raw, 2))
+              WHEN LENGTH(s1.phone_digits_raw) = 12 AND STARTS_WITH(s1.phone_digits_raw, '7')
+                THEN s1.phone_digits_raw
+              ELSE NULL
+            END AS phone_digits_norm
+          FROM (
+            SELECT
+              pc.chunk,
+              pc.off,
+              NULLIF(REGEXP_REPLACE(pc.chunk, r'\D', ''), '') AS phone_digits_raw
+            FROM UNNEST(c.phone_chunks) AS pc
+          ) s1
+        ) s2
+      ) s3
+      WHERE s3.phone_value_e164 IS NOT NULL
+    ) AS phones_norm
+  FROM chunks c
 ),
 
 picked AS (
   SELECT
     n.*,
-    CASE
-      WHEN phone_digits IS NULL THEN NULL
-      WHEN LENGTH(phone_digits)=10 THEN CONCAT('+7',phone_digits)
-      WHEN LENGTH(phone_digits)=11 AND STARTS_WITH(phone_digits,'8')
-        THEN CONCAT('+7',SUBSTR(phone_digits,2))
-      WHEN LENGTH(phone_digits)=11 AND STARTS_WITH(phone_digits,'7')
-        THEN CONCAT('+',phone_digits)
-      ELSE NULL
-    END AS PHONE_E164
+    (
+      SELECT AS STRUCT p.phone_value_e164, p.phone_value_pretty
+      FROM UNNEST(n.phones_norm) p
+      ORDER BY
+        CASE
+          WHEN REGEXP_CONTAINS(p.phone_value_e164, r'^\+7\d{10}$') THEN 1
+          WHEN REGEXP_CONTAINS(p.phone_value_e164, r'^\+7\d{11}$') THEN 2
+          ELSE 9
+        END,
+        p.off
+      LIMIT 1
+    ) AS primary_phone
   FROM normalized n
 ),
 
-stg_final AS (
-SELECT
+staging_pre AS (
+  SELECT
+    SAFE_CAST(p.ID AS STRING) AS ID,
+    SAFE_CAST(p.TITLE AS STRING) AS TITLE,
+    SAFE_CAST(p.HONORIFIC AS STRING) AS HONORIFIC,
+    SAFE_CAST(p.NAME AS STRING) AS NAME,
+    SAFE_CAST(p.SECOND_NAME AS STRING) AS SECOND_NAME,
+    SAFE_CAST(p.LAST_NAME AS STRING) AS LAST_NAME,
+    SAFE_CAST(p.COMPANY_TITLE AS STRING) AS COMPANY_TITLE,
+    SAFE_CAST(p.COMPANY_ID AS STRING) AS COMPANY_ID,
+    SAFE_CAST(p.CONTACT_ID AS STRING) AS CONTACT_ID,
+    SAFE_CAST(p.IS_RETURN_CUSTOMER AS STRING) AS IS_RETURN_CUSTOMER,
+    SAFE_CAST(p.BIRTHDATE AS STRING) AS BIRTHDATE,
+    SAFE_CAST(p.SOURCE_ID AS STRING) AS SOURCE_ID,
+    SAFE_CAST(p.SOURCE_DESCRIPTION AS STRING) AS SOURCE_DESCRIPTION,
+    SAFE_CAST(p.STATUS_ID AS STRING) AS STATUS_ID,
+    SAFE_CAST(p.STATUS_DESCRIPTION AS STRING) AS STATUS_DESCRIPTION,
+    SAFE_CAST(p.POST AS STRING) AS POST,
+    SAFE_CAST(p.COMMENTS AS STRING) AS COMMENTS,
+    SAFE_CAST(p.CURRENCY_ID AS STRING) AS CURRENCY_ID,
+    SAFE_CAST(p.OPPORTUNITY AS STRING) AS OPPORTUNITY,
+    SAFE_CAST(p.IS_MANUAL_OPPORTUNITY AS STRING) AS IS_MANUAL_OPPORTUNITY,
+    SAFE_CAST(p.HAS_PHONE AS STRING) AS HAS_PHONE,
+    SAFE_CAST(p.HAS_EMAIL AS STRING) AS HAS_EMAIL,
+    SAFE_CAST(p.HAS_IMOL AS STRING) AS HAS_IMOL,
+    SAFE_CAST(p.ASSIGNED_BY_ID AS STRING) AS ASSIGNED_BY_ID,
+    SAFE_CAST(p.CREATED_BY_ID AS STRING) AS CREATED_BY_ID,
+    SAFE_CAST(p.MODIFY_BY_ID AS STRING) AS MODIFY_BY_ID,
+    SAFE_CAST(p.DATE_CREATE AS STRING) AS DATE_CREATE,
+    SAFE_CAST(p.DATE_MODIFY AS STRING) AS DATE_MODIFY,
+    SAFE_CAST(p.DATE_CLOSED AS STRING) AS DATE_CLOSED,
+    SAFE_CAST(p.STATUS_SEMANTIC_ID AS STRING) AS STATUS_SEMANTIC_ID,
+    SAFE_CAST(p.OPENED AS STRING) AS OPENED,
+    SAFE_CAST(p.ORIGINATOR_ID AS STRING) AS ORIGINATOR_ID,
+    SAFE_CAST(p.ORIGIN_ID AS STRING) AS ORIGIN_ID,
+    SAFE_CAST(p.MOVED_BY_ID AS STRING) AS MOVED_BY_ID,
+    SAFE_CAST(p.MOVED_TIME AS STRING) AS MOVED_TIME,
 
-  SAFE_CAST(ID AS STRING) ID,
-  SAFE_CAST(TITLE AS STRING) TITLE,
-  SAFE_CAST(NAME AS STRING) NAME,
-  SAFE_CAST(STATUS_ID AS STRING) STATUS_ID,
-  SAFE_CAST(OPPORTUNITY AS STRING) OPPORTUNITY,
-  SAFE_CAST(DATE_MODIFY AS STRING) DATE_MODIFY,
+    SAFE_CAST(p.ADDRESS AS STRING) AS ADDRESS,
+    SAFE_CAST(p.ADDRESS_2 AS INT64) AS ADDRESS_2,
+    SAFE_CAST(p.ADDRESS_CITY AS INT64) AS ADDRESS_CITY,
+    SAFE_CAST(p.ADDRESS_POSTAL_CODE AS INT64) AS ADDRESS_POSTAL_CODE,
+    SAFE_CAST(p.ADDRESS_REGION AS INT64) AS ADDRESS_REGION,
+    SAFE_CAST(p.ADDRESS_PROVINCE AS INT64) AS ADDRESS_PROVINCE,
+    SAFE_CAST(p.ADDRESS_COUNTRY AS INT64) AS ADDRESS_COUNTRY,
+    SAFE_CAST(p.ADDRESS_COUNTRY_CODE AS INT64) AS ADDRESS_COUNTRY_CODE,
+    SAFE_CAST(p.ADDRESS_LOC_ADDR_ID AS STRING) AS ADDRESS_LOC_ADDR_ID,
 
-  PHONE_E164 AS PHONE,
-  phone_value_raw AS PHONE_RAW,
-  PHONE_E164 AS PHONE_E164,
-  IF(PHONE_E164 IS NULL,[],[PHONE_E164]) AS PHONE_VALUES_E164,
-  PHONE_E164 AS PHONE_VALUES_E164_KEY,
+    SAFE_CAST(p.UTM_SOURCE AS STRING) AS UTM_SOURCE,
+    SAFE_CAST(p.UTM_MEDIUM AS STRING) AS UTM_MEDIUM,
+    SAFE_CAST(p.UTM_CAMPAIGN AS STRING) AS UTM_CAMPAIGN,
+    SAFE_CAST(p.UTM_CONTENT AS STRING) AS UTM_CONTENT,
+    SAFE_CAST(p.UTM_TERM AS STRING) AS UTM_TERM,
 
-  TO_HEX(SHA256(COALESCE(SAFE_CAST(ID AS STRING),''))) AS surrogate_key
+    SAFE_CAST(p.LAST_COMMUNICATION_TIME AS STRING) AS LAST_COMMUNICATION_TIME,
+    SAFE_CAST(p.LAST_ACTIVITY_BY AS STRING) AS LAST_ACTIVITY_BY,
+    SAFE_CAST(p.LAST_ACTIVITY_TIME AS STRING) AS LAST_ACTIVITY_TIME,
 
-FROM picked
+    --SAFE_CAST(p.product_type AS INT64) AS product_type,
+    SAFE_CAST(
+  COALESCE( 
+    NULLIF(REGEXP_EXTRACT(TO_JSON_STRING(p.product_type), r'\b\d+\b'), ''),
+    NULL
+  )
+AS INT64) AS product_type,
+
+
+    SAFE_CAST(p.rs_utm_source AS STRING) AS rs_utm_source,
+    SAFE_CAST(p.rs_utm_medium AS STRING) AS rs_utm_medium,
+    SAFE_CAST(p.rs_utm_campaign AS STRING) AS rs_utm_campaign,
+    SAFE_CAST(p.rs_utm_term AS STRING) AS rs_utm_term,
+    SAFE_CAST(p.rs_utm_content AS STRING) AS rs_utm_content,
+    SAFE_CAST(p.rs_google_client_id AS STRING) AS rs_google_client_id,
+    SAFE_CAST(p.required_fields AS INT64) AS required_fields,
+    SAFE_CAST(p.lead_rejection_reason AS STRING) AS lead_rejection_reason,
+    SAFE_CAST(p.rs_project AS STRING) AS rs_project,
+
+    SAFE_CAST(p.phone_value_raw AS STRING) AS PHONE_RAW,
+    SAFE_CAST(p.primary_phone.phone_value_pretty AS STRING) AS PHONE,
+    SAFE_CAST(p.primary_phone.phone_value_e164 AS STRING) AS PHONE_E164,
+
+    ARRAY(
+      SELECT DISTINCT x.phone_value_e164
+      FROM UNNEST(p.phones_norm) x
+      WHERE x.phone_value_e164 IS NOT NULL
+      ORDER BY x.phone_value_e164
+    ) AS PHONE_VALUES_E164,
+
+    TO_HEX(SHA256(COALESCE(SAFE_CAST(p.ID AS STRING), ''))) AS surrogate_key
+  FROM picked p
 )
 
-SELECT * FROM stg_final;
+SELECT
+  sp.*,
+  ARRAY_TO_STRING(IFNULL(sp.PHONE_VALUES_E164, []), '|') AS PHONE_VALUES_E164_KEY
+FROM staging_pre sp
+;
 
 -- ============================================================
--- 2. MERGE (SCD2)
+-- 1) Закрываем текущие (is_current=true), если изменились
 -- ============================================================
-
-MERGE `galery-22579.gal_bitrix24.history_bitrix24_leads` AS history
+MERGE INTO `galery-22579.gal_bitrix24.history_bitrix24_leads` AS history
 USING stg AS staging
 ON history.surrogate_key = staging.surrogate_key
 AND history.is_current = TRUE
 
--- 🔴 Закрываем старые версии
 WHEN MATCHED AND (
-     history.TITLE IS DISTINCT FROM staging.TITLE
-  OR history.NAME IS DISTINCT FROM staging.NAME
-  OR history.STATUS_ID IS DISTINCT FROM staging.STATUS_ID
-  OR history.OPPORTUNITY IS DISTINCT FROM staging.OPPORTUNITY
-  OR history.DATE_MODIFY IS DISTINCT FROM staging.DATE_MODIFY
-  OR history.PHONE_E164 IS DISTINCT FROM staging.PHONE_E164
+     history.TITLE                   IS DISTINCT FROM staging.TITLE
+ OR  history.HONORIFIC               IS DISTINCT FROM staging.HONORIFIC
+ OR  history.NAME                    IS DISTINCT FROM staging.NAME
+ OR  history.SECOND_NAME             IS DISTINCT FROM staging.SECOND_NAME
+ OR  history.LAST_NAME               IS DISTINCT FROM staging.LAST_NAME
+ OR  history.COMPANY_TITLE           IS DISTINCT FROM staging.COMPANY_TITLE
+ OR  history.COMPANY_ID              IS DISTINCT FROM staging.COMPANY_ID
+ OR  history.CONTACT_ID              IS DISTINCT FROM staging.CONTACT_ID
+ OR  history.IS_RETURN_CUSTOMER      IS DISTINCT FROM staging.IS_RETURN_CUSTOMER
+ OR  history.BIRTHDATE               IS DISTINCT FROM staging.BIRTHDATE
+ OR  history.SOURCE_ID               IS DISTINCT FROM staging.SOURCE_ID
+ OR  history.SOURCE_DESCRIPTION      IS DISTINCT FROM staging.SOURCE_DESCRIPTION
+ OR  history.STATUS_ID               IS DISTINCT FROM staging.STATUS_ID
+ OR  history.STATUS_DESCRIPTION      IS DISTINCT FROM staging.STATUS_DESCRIPTION
+ OR  history.POST                    IS DISTINCT FROM staging.POST
+ OR  history.COMMENTS                IS DISTINCT FROM staging.COMMENTS
+ OR  history.CURRENCY_ID             IS DISTINCT FROM staging.CURRENCY_ID
+ OR  history.OPPORTUNITY             IS DISTINCT FROM staging.OPPORTUNITY
+ OR  history.IS_MANUAL_OPPORTUNITY   IS DISTINCT FROM staging.IS_MANUAL_OPPORTUNITY
+ OR  history.HAS_PHONE               IS DISTINCT FROM staging.HAS_PHONE
+ OR  history.HAS_EMAIL               IS DISTINCT FROM staging.HAS_EMAIL
+ OR  history.HAS_IMOL                IS DISTINCT FROM staging.HAS_IMOL
+ OR  history.ASSIGNED_BY_ID          IS DISTINCT FROM staging.ASSIGNED_BY_ID
+ OR  history.CREATED_BY_ID           IS DISTINCT FROM staging.CREATED_BY_ID
+ OR  history.MODIFY_BY_ID            IS DISTINCT FROM staging.MODIFY_BY_ID
+ OR  history.DATE_CREATE             IS DISTINCT FROM staging.DATE_CREATE
+ OR  history.DATE_MODIFY             IS DISTINCT FROM staging.DATE_MODIFY
+ OR  history.DATE_CLOSED             IS DISTINCT FROM staging.DATE_CLOSED
+ OR  history.STATUS_SEMANTIC_ID      IS DISTINCT FROM staging.STATUS_SEMANTIC_ID
+ OR  history.OPENED                  IS DISTINCT FROM staging.OPENED
+ OR  history.ORIGINATOR_ID           IS DISTINCT FROM staging.ORIGINATOR_ID
+ OR  history.ORIGIN_ID               IS DISTINCT FROM staging.ORIGIN_ID
+ OR  history.MOVED_BY_ID             IS DISTINCT FROM staging.MOVED_BY_ID
+ OR  history.MOVED_TIME              IS DISTINCT FROM staging.MOVED_TIME
+ OR  history.ADDRESS                 IS DISTINCT FROM staging.ADDRESS
+ OR  history.ADDRESS_2               IS DISTINCT FROM staging.ADDRESS_2
+ OR  history.ADDRESS_CITY            IS DISTINCT FROM staging.ADDRESS_CITY
+ OR  history.ADDRESS_POSTAL_CODE     IS DISTINCT FROM staging.ADDRESS_POSTAL_CODE
+ OR  history.ADDRESS_REGION          IS DISTINCT FROM staging.ADDRESS_REGION
+ OR  history.ADDRESS_PROVINCE        IS DISTINCT FROM staging.ADDRESS_PROVINCE
+ OR  history.ADDRESS_COUNTRY         IS DISTINCT FROM staging.ADDRESS_COUNTRY
+ OR  history.ADDRESS_COUNTRY_CODE    IS DISTINCT FROM staging.ADDRESS_COUNTRY_CODE
+ OR  history.ADDRESS_LOC_ADDR_ID     IS DISTINCT FROM staging.ADDRESS_LOC_ADDR_ID
+ OR  history.UTM_SOURCE              IS DISTINCT FROM staging.UTM_SOURCE
+ OR  history.UTM_MEDIUM              IS DISTINCT FROM staging.UTM_MEDIUM
+ OR  history.UTM_CAMPAIGN            IS DISTINCT FROM staging.UTM_CAMPAIGN
+ OR  history.UTM_CONTENT             IS DISTINCT FROM staging.UTM_CONTENT
+ OR  history.UTM_TERM                IS DISTINCT FROM staging.UTM_TERM
+ OR  history.LAST_COMMUNICATION_TIME IS DISTINCT FROM staging.LAST_COMMUNICATION_TIME
+ OR  history.LAST_ACTIVITY_BY        IS DISTINCT FROM staging.LAST_ACTIVITY_BY
+ OR  history.LAST_ACTIVITY_TIME      IS DISTINCT FROM staging.LAST_ACTIVITY_TIME
+ --OR  history.product_type            IS DISTINCT FROM staging.product_type
+
+ OR SAFE_CAST(history.product_type AS STRING) IS DISTINCT FROM SAFE_CAST(staging.product_type AS STRING)
+
+ OR  history.rs_utm_source           IS DISTINCT FROM staging.rs_utm_source
+ OR  history.rs_utm_medium           IS DISTINCT FROM staging.rs_utm_medium
+ OR  history.rs_utm_campaign         IS DISTINCT FROM staging.rs_utm_campaign
+ OR  history.rs_utm_term             IS DISTINCT FROM staging.rs_utm_term
+ OR  history.rs_utm_content          IS DISTINCT FROM staging.rs_utm_content
+ OR  history.rs_google_client_id     IS DISTINCT FROM staging.rs_google_client_id
+ OR  history.required_fields         IS DISTINCT FROM staging.required_fields
+ OR  history.lead_rejection_reason   IS DISTINCT FROM staging.lead_rejection_reason
+ OR  history.rs_project              IS DISTINCT FROM staging.rs_project
+ OR  history.PHONE_RAW               IS DISTINCT FROM staging.PHONE_RAW
+ OR  history.PHONE                   IS DISTINCT FROM staging.PHONE
+ OR  history.PHONE_E164              IS DISTINCT FROM staging.PHONE_E164
+ OR  IFNULL(history.PHONE_VALUES_E164_KEY, '') IS DISTINCT FROM IFNULL(staging.PHONE_VALUES_E164_KEY, '')
 )
 THEN UPDATE SET
   is_current = FALSE,
-  valid_to = CURRENT_DATETIME('Asia/Almaty')
-
--- 🟢 Вставляем новые (и новые, и изменённые)
-WHEN NOT MATCHED THEN
-INSERT (
-  ID, TITLE, NAME, STATUS_ID, OPPORTUNITY, DATE_MODIFY,
-  PHONE, PHONE_RAW, PHONE_E164, PHONE_VALUES_E164, PHONE_VALUES_E164_KEY,
-  surrogate_key,
-  is_current, valid_from, valid_to
-)
-VALUES (
-  staging.ID, staging.TITLE, staging.NAME, staging.STATUS_ID,
-  staging.OPPORTUNITY, staging.DATE_MODIFY,
-  staging.PHONE, staging.PHONE_RAW, staging.PHONE_E164,
-  staging.PHONE_VALUES_E164, staging.PHONE_VALUES_E164_KEY,
-  staging.surrogate_key,
-  TRUE, CURRENT_DATETIME('Asia/Almaty'), NULL
-);
+  valid_to   = CURRENT_DATETIME()
 
 END;
