@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "gal_bitrix24_marts",
   name: "deals_mart",
-  tags: ["bitrix24_deals", "bitrix24", "deals", "mart"],
+  tags: ["bitrix24_deals", "bitrix24", "deals", "mart", "bitrix24_status_list", "bitrix24_contacts", "bitrix24_user_list", "bitrix24_company_list", "bitrix24_deal_category_list"],
   description: "Март-таблица сделок Bitrix24 с обогащением справочниками (компании, контакты, пользователи, статусы, UTM).",
   columns: {
     deal_id:                  "ID сделки (ID в Bitrix24)",
