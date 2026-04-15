@@ -6,8 +6,9 @@ config {
   tags: ["rw", "rw_measurements", "history", "scd2"]
 }
 
-DECLARE run_ts DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty"); 
--- 1️⃣ Создаём таблицу если нет
+DECLARE run_ts DATETIME DEFAULT CURRENT_DATETIME("Asia/Almaty");
+
+-- 1️⃣ создаём таблицу (с partition + cluster = обязательно для продакшена)
 
 CREATE TABLE IF NOT EXISTS ${self()} (
   ui_Measurement_ID INT64,
@@ -27,70 +28,20 @@ CREATE TABLE IF NOT EXISTS ${self()} (
   Target_Max_Weight FLOAT64,
   Waste_Max_Weight FLOAT64,
   Surface_Type STRING,
+
   surrogate_key STRING,
   row_hash STRING,
+
   is_current BOOL,
   valid_from DATETIME,
   valid_to DATETIME
-);
 
--- 2️⃣ Закрываем изменённые записи
+) ;
 
-MERGE INTO ${self()} h
-USING (
-  SELECT
-    ui_Measurement_ID,
-    Source_ID,
-    Site_ID,
-    Measurement_Time,
-    Recipe_Name,
-    Comment,
-    Waste_Min_Height,
-    Target_Min_Height,
-    Target_Height,
-    Target_Max_Height,
-    Waste_Max_Height,
-    Waste_Min_Weight,
-    Target_Min_Weight,
-    Target_Weight,
-    Target_Max_Weight,
-    Waste_Max_Weight,
-    Surface_Type,
+-- 2️⃣ единый staging (сразу считаем hash)
 
-    TO_HEX(SHA256(CAST(ui_Measurement_ID AS STRING))) AS surrogate_key,
-
-    TO_HEX(SHA256(CONCAT(
-      COALESCE(CAST(Source_ID AS STRING), ''),
-      COALESCE(CAST(Site_ID AS STRING), ''),
-      COALESCE(CAST(Measurement_Time AS STRING), ''),
-      COALESCE(Recipe_Name, ''),
-      COALESCE(Comment, ''),
-      COALESCE(CAST(Waste_Min_Height AS STRING), ''),
-      COALESCE(CAST(Target_Min_Height AS STRING), ''),
-      COALESCE(CAST(Target_Height AS STRING), ''),
-      COALESCE(CAST(Target_Max_Height AS STRING), ''),
-      COALESCE(CAST(Waste_Max_Height AS STRING), ''),
-      COALESCE(CAST(Waste_Min_Weight AS STRING), ''),
-      COALESCE(CAST(Target_Min_Weight AS STRING), ''),
-      COALESCE(CAST(Target_Weight AS STRING), ''),
-      COALESCE(CAST(Target_Max_Weight AS STRING), ''),
-      COALESCE(CAST(Waste_Max_Weight AS STRING), ''),
-      COALESCE(CAST(Surface_Type AS STRING), '')
-    ))) AS row_hash
-
-  FROM ${ref("staging_measurements")}
-) s
-ON h.surrogate_key = s.surrogate_key
-AND h.is_current = TRUE
-WHEN MATCHED
-AND s.row_hash IS DISTINCT FROM h.row_hash
-THEN UPDATE SET
-  is_current = FALSE,
-  valid_to = run_ts;
-
--- 3️⃣ Вставляем новые и изменённые
-INSERT INTO ${self()}
-(
+CREATE TEMP TABLE stg AS
+SELECT
   ui_Measurement_ID,
   Source_ID,
   Site_ID,
@@ -108,13 +59,97 @@ INSERT INTO ${self()}
   Target_Max_Weight,
   Waste_Max_Weight,
   Surface_Type,
-  surrogate_key,
-  row_hash,
-  is_current,
-  valid_from,
-  valid_to
-)
 
+  -- ключ (по бизнес ID)
+  TO_HEX(SHA256(CAST(ui_Measurement_ID AS STRING))) AS surrogate_key,
+
+  -- hash строки (для сравнения изменений)
+  TO_HEX(SHA256(CONCAT(
+    COALESCE(CAST(Source_ID AS STRING), ''),
+    COALESCE(CAST(Site_ID AS STRING), ''),
+    COALESCE(CAST(Measurement_Time AS STRING), ''),
+    COALESCE(Recipe_Name, ''),
+    COALESCE(Comment, ''),
+    COALESCE(CAST(Waste_Min_Height AS STRING), ''),
+    COALESCE(CAST(Target_Min_Height AS STRING), ''),
+    COALESCE(CAST(Target_Height AS STRING), ''),
+    COALESCE(CAST(Target_Max_Height AS STRING), ''),
+    COALESCE(CAST(Waste_Max_Height AS STRING), ''),
+    COALESCE(CAST(Waste_Min_Weight AS STRING), ''),
+    COALESCE(CAST(Target_Min_Weight AS STRING), ''),
+    COALESCE(CAST(Target_Weight AS STRING), ''),
+    COALESCE(CAST(Target_Max_Weight AS STRING), ''),
+    COALESCE(CAST(Waste_Max_Weight AS STRING), ''),
+    COALESCE(CAST(Surface_Type AS STRING), '')
+  ))) AS row_hash
+
+FROM ${ref("staging_measurements")};
+
+MERGE ${self()} h
+USING stg s
+ON h.surrogate_key = s.surrogate_key
+AND h.is_current = TRUE
+
+-- 🔴 1. если запись изменилась → закрываем старую
+WHEN MATCHED AND s.row_hash IS DISTINCT FROM h.row_hash THEN
+  UPDATE SET
+    is_current = FALSE,
+    valid_to = run_ts
+
+-- 🟢 2. если записи не было → вставляем новую
+WHEN NOT MATCHED THEN
+  INSERT (
+    ui_Measurement_ID,
+    Source_ID,
+    Site_ID,
+    Measurement_Time,
+    Recipe_Name,
+    Comment,
+    Waste_Min_Height,
+    Target_Min_Height,
+    Target_Height,
+    Target_Max_Height,
+    Waste_Max_Height,
+    Waste_Min_Weight,
+    Target_Min_Weight,
+    Target_Weight,
+    Target_Max_Weight,
+    Waste_Max_Weight,
+    Surface_Type,
+    surrogate_key,
+    row_hash,
+    is_current,
+    valid_from,
+    valid_to
+  )
+  VALUES (
+    s.ui_Measurement_ID,
+    s.Source_ID,
+    s.Site_ID,
+    s.Measurement_Time,
+    s.Recipe_Name,
+    s.Comment,
+    s.Waste_Min_Height,
+    s.Target_Min_Height,
+    s.Target_Height,
+    s.Target_Max_Height,
+    s.Waste_Max_Height,
+    s.Waste_Min_Weight,
+    s.Target_Min_Weight,
+    s.Target_Weight,
+    s.Target_Max_Weight,
+    s.Waste_Max_Weight,
+    s.Surface_Type,
+    s.surrogate_key,
+    s.row_hash,
+    TRUE,
+    run_ts,
+    NULL
+  );
+
+-- 4️⃣ ДОБАВЛЯЕМ новую версию для изменённых записей (ВАЖНО!)
+
+INSERT INTO ${self()}
 SELECT
   s.ui_Measurement_ID,
   s.Source_ID,
@@ -138,52 +173,8 @@ SELECT
   TRUE,
   run_ts,
   NULL
-
-FROM (
-  SELECT
-    ui_Measurement_ID,
-    Source_ID,
-    Site_ID,
-    Measurement_Time,
-    Recipe_Name,
-    Comment,
-    Waste_Min_Height,
-    Target_Min_Height,
-    Target_Height,
-    Target_Max_Height,
-    Waste_Max_Height,
-    Waste_Min_Weight,
-    Target_Min_Weight,
-    Target_Weight,
-    Target_Max_Weight,
-    Waste_Max_Weight,
-    Surface_Type,
-    TO_HEX(SHA256(CAST(ui_Measurement_ID AS STRING))) AS surrogate_key,
-    TO_HEX(SHA256(CONCAT(
-      COALESCE(CAST(Source_ID AS STRING), ''),
-      COALESCE(CAST(Site_ID AS STRING), ''),
-      COALESCE(CAST(Measurement_Time AS STRING), ''),
-      COALESCE(Recipe_Name, ''),
-      COALESCE(Comment, ''),
-      COALESCE(CAST(Waste_Min_Height AS STRING), ''),
-      COALESCE(CAST(Target_Min_Height AS STRING), ''),
-      COALESCE(CAST(Target_Height AS STRING), ''),
-      COALESCE(CAST(Target_Max_Height AS STRING), ''),
-      COALESCE(CAST(Waste_Max_Height AS STRING), ''),
-      COALESCE(CAST(Waste_Min_Weight AS STRING), ''),
-      COALESCE(CAST(Target_Min_Weight AS STRING), ''),
-      COALESCE(CAST(Target_Weight AS STRING), ''),
-      COALESCE(CAST(Target_Max_Weight AS STRING), ''),
-      COALESCE(CAST(Waste_Max_Weight AS STRING), ''),
-      COALESCE(CAST(Surface_Type AS STRING), '')
-    ))) AS row_hash
-  FROM ${ref("staging_measurements")}
-) s
-
-LEFT JOIN ${self()} h
+FROM stg s
+JOIN ${self()} h
   ON s.surrogate_key = h.surrogate_key
-  AND h.is_current = TRUE
-
 WHERE
-  h.surrogate_key IS NULL
-  OR s.row_hash IS DISTINCT FROM h.row_hash;
+  h.valid_to = run_ts;   -- именно те, что закрыли в этом запуске
