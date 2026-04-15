@@ -3,7 +3,8 @@ config {
   schema: "gal_bitrix24",
   name: "history_bitrix24_leads",
   tags: ["bitrix24_leads","bitrix24","leads","history","scd2"],
-  description: "SCD2 история лидов Bitrix24. surrogate_key = SHA256(ID). Телефоны нормализуются."
+  description: "SCD2 история лидов Bitrix24. surrogate_key = SHA256(ID). Телефоны нормализуются.",
+  hasOutput: true
 }
 
 CREATE TEMP TABLE stg AS
