@@ -20,7 +20,7 @@ WITH base AS (
       ''
     ) AS phone_value_raw
 
-  FROM `galery-22579.gal_bitrix24.external_staging_bitrix24_leads` s
+  FROM  ${ref("external_staging_bitrix24_leads")} s
 ),
 
 
@@ -236,7 +236,7 @@ FROM staging_pre sp
 -- ============================================================
 -- 1) Закрываем текущие (is_current=true), если изменились
 -- ============================================================
-MERGE INTO `galery-22579.gal_bitrix24.history_bitrix24_leads` AS history
+MERGE INTO  ${self()} AS history
 USING stg AS staging
 ON history.surrogate_key = staging.surrogate_key
 AND history.is_current = TRUE
