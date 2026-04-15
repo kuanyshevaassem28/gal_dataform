@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "gal_bitrix24_marts",
   name: "leads_mart",
-  tags: ["bitrix24_leads", "bitrix24", "leads", "mart"],
+  tags: ["bitrix24_leads", "bitrix24", "leads", "mart", "bitrix24_status_list", "bitrix24_contacts", "bitrix24_user_list", "bitrix24_company_list"],
   description: "Маркетинговый mart по лидам Bitrix24 c нормализованными UTM и обогащением из справочников.",
   columns: {
     id: "ID лида",
