@@ -3,6 +3,7 @@ config {
   schema: "gal_hess_statistic",
   name: "exchange_layer_line_2_history",
   tags: ["hess_layer_line_2", "hess", "layer", "history", "scd2"],
+  hasOutput: true,
 
   columns: {
     ID: "ID строки исходного слоя",
