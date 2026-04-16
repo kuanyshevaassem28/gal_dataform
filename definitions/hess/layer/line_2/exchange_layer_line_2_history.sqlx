@@ -1,65 +1,50 @@
 config {
-  type: "incremental",
+  type: "operations",
   schema: "gal_hess_statistic",
   name: "exchange_layer_line_2_history",
   tags: ["hess_layer_line_2", "hess", "layer", "history", "scd2"],
-  description: "HESS — SCD2-история по слоям (layer_SID), одна актуальная запись на layer_SID.",
-  uniqueKey: ["layer_SID", "valid_from"],
 
   columns: {
-    ID:                   "ID строки исходного слоя",
-    layer_SID:            "Идентификатор слоя",
-    plant:                "Завод",
-    plant_part_wet:       "Часть завода (влажная сторона)",
-    plant_part_dry:       "Часть завода (сухая сторона)",
-    job_wet:              "Работа (влажная сторона)",
-    product_name_wet:     "Название продукта (влажная сторона)",
-    product_number_wet:   "Номер продукта (влажная сторона)",
-    charge_wet_start:     "Начало партии (влажная сторона)",
-    charge_wet_end:       "Конец партии (влажная сторона)",
-    shift_wet_start:      "Начало смены (влажная сторона)",
-    shift_wet_end:        "Конец смены (влажная сторона)",
-    shift_wet_number:     "Номер смены (влажная сторона)",
-    charge_SID_wet:       "Идентификатор партии (влажная сторона)",
-    job_dry:              "Работа (сухая сторона)",
-    product_name_dry:     "Название продукта (сухая сторона)",
-    product_number_dry:   "Номер продукта (сухая сторона)",
-    charge_dry_start:     "Начало партии (сухая сторона)",
-    charge_dry_end:       "Конец партии (сухая сторона)",
-    shift_dry_start:      "Начало смены (сухая сторона)",
-    shift_dry_end:        "Конец смены (сухая сторона)",
-    shift_dry_number:     "Номер смены (сухая сторона)",
-    charge_SID_dry:       "Идентификатор партии (сухая сторона)",
-    quality:              "Качество",
-    timestamp:            "Временная метка",
-    to_chamber:           "В камеру",
-    from_chamber:         "Из камеры",
-    dry_time:             "Время сушки (NUMERIC)",
-    stacked:              "Упаковано (временная метка)",
-    modified:             "Изменено (временная метка)",
-    previb_time:          "Время предварительной вибрации",
-    mainvib_time:         "Время основной вибрации",
-    previb_speed:         "Скорость предварительной вибрации",
-    mainvib_speed:        "Скорость основной вибрации",
-    previb_angle:         "Угол предварительной вибрации",
-    mainvib_angle:        "Угол основной вибрации",
-    tamphead_preasure:    "Давление трамбовочной головки",
-    height:               "Высота",
-    height_avg_shv:       "Средняя высота SHV",
-    height_1_shv:         "Высота 1 SHV",
-    height_2_shv:         "Высота 2 SHV",
-    height_3_shv:         "Высота 3 SHV",
-    weigh_shv:            "Вес SHV",
-    valid_from:           "Начало действия версии",
-    valid_to:             "Конец действия версии",
-    is_current:           "Признак актуальной версии (TRUE — текущая)",
-    line: "Производственная линия (Линия 2)"
+    ID: "ID строки исходного слоя",
+    layer_SID: "Идентификатор слоя",
+    plant: "Завод",
+    plant_part_wet: "Часть завода (влажная сторона)",
+    plant_part_dry: "Часть завода (сухая сторона)",
+    job_wet: "Работа (влажная сторона)",
+    product_name_wet: "Название продукта (влажная сторона)",
+    product_number_wet: "Номер продукта (влажная сторона)",
+    charge_wet_start: "Начало партии (влажная сторона)",
+    charge_wet_end: "Конец партии (влажная сторона)",
+    shift_wet_start: "Начало смены (влажная сторона)",
+    shift_wet_end: "Конец смены (влажная сторона)",
+    shift_wet_number: "Номер смены (влажная сторона)",
+    charge_SID_wet: "SID партии (влажная сторона)",
+    job_dry: "Работа (сухая сторона)",
+    product_name_dry: "Название продукта (сухая сторона)",
+    product_number_dry: "Номер продукта (сухая сторона)",
+    charge_dry_start: "Начало партии (сухая сторона)",
+    charge_dry_end: "Конец партии (сухая сторона)",
+    shift_dry_start: "Начало смены (сухая сторона)",
+    shift_dry_end: "Конец смены (сухая сторона)",
+    shift_dry_number: "Номер смены (сухая сторона)",
+    charge_SID_dry: "SID партии (сухая сторона)",
+    quality: "Качество",
+    timestamp: "Временная метка",
+    to_chamber: "В камеру",
+    from_chamber: "Из камеры",
+    dry_time: "Время сушки",
+    stacked: "Упаковано",
+    modified: "Изменено",
+    valid_from: "Начало версии",
+    valid_to: "Конец версии",
+    is_current: "Актуальность",
+    line: "Линия"
   }
 }
 
-${when(incremental(), `
+MERGE ${self()} H
+USING (
 
-WITH S_SRC AS (
   SELECT
     CAST(ID AS INT64) AS ID,
     CAST(layer_SID AS INT64) AS layer_SID,
@@ -161,394 +146,56 @@ WITH S_SRC AS (
       ELSE SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%E*S', CAST(from_chamber AS STRING))
     END AS from_chamber,
 
-    -- ===== NUMERIC =====
     SAFE_CAST(dry_time AS NUMERIC) AS dry_time,
 
-    CASE
-      WHEN CAST(stacked AS STRING) = 'NaT' THEN NULL
-      WHEN REGEXP_CONTAINS(CAST(stacked AS STRING), r'^\d+$')
-        THEN DATETIME(TIMESTAMP_MICROS(DIV(CAST(stacked AS INT64), 1000)))
-      ELSE SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%E*S', CAST(stacked AS STRING))
-    END AS stacked,
+    "Линия 2" AS line
 
-    CASE
-      WHEN CAST(modified AS STRING) = 'NaT' THEN NULL
-      WHEN REGEXP_CONTAINS(CAST(modified AS STRING), r'^\d+$')
-        THEN DATETIME(TIMESTAMP_MICROS(DIV(CAST(modified AS INT64), 1000)))
-      ELSE SAFE.PARSE_DATETIME('%Y-%m-%d %H:%M:%E*S', CAST(modified AS STRING))
-    END AS modified,
-
-    CAST(previb_time AS FLOAT64) AS previb_time,
-    CAST(mainvib_time AS FLOAT64) AS mainvib_time,
-    CAST(previb_speed AS FLOAT64) AS previb_speed,
-    CAST(mainvib_speed AS FLOAT64) AS mainvib_speed,
-    CAST(previb_angle AS FLOAT64) AS previb_angle,
-    CAST(mainvib_angle AS FLOAT64) AS mainvib_angle,
-    CAST(tamphead_preasure AS FLOAT64) AS tamphead_preasure,
-    CAST(height AS FLOAT64) AS height,
-    CAST(height_avg_shv AS FLOAT64) AS height_avg_shv,
-    CAST(height_1_shv AS FLOAT64) AS height_1_shv,
-    CAST(height_2_shv AS FLOAT64) AS height_2_shv,
-    CAST(height_3_shv AS FLOAT64) AS height_3_shv,
-    CAST(weigh_shv AS FLOAT64) AS weigh_shv
-)
-,
-
-H_CUR AS (
-  SELECT
-    ID,
-    layer_SID,
-    plant,
-    plant_part_wet,
-    plant_part_dry,
-    job_wet,
-    product_name_wet,
-    product_number_wet,
-    charge_wet_start,
-    charge_wet_end,
-    shift_wet_start,
-    shift_wet_end,
-    shift_wet_number,
-    charge_SID_wet,
-    job_dry,
-    product_name_dry,
-    product_number_dry,
-    charge_dry_start,
-    charge_dry_end,
-    shift_dry_start,
-    shift_dry_end,
-    shift_dry_number,
-    charge_SID_dry,
-    quality,
-    timestamp,
-    to_chamber,
-    from_chamber,
-    dry_time,
-    stacked,
-    modified,
-    previb_time,
-    mainvib_time,
-    previb_speed,
-    mainvib_speed,
-    previb_angle,
-    mainvib_angle,
-    tamphead_preasure,
-    height,
-    height_avg_shv,
-    height_1_shv,
-    height_2_shv,
-    height_3_shv,
-    weigh_shv,
-    valid_from
-  FROM ${self()}
-  WHERE is_current = TRUE
-),
-
-NEW_OR_CHANGED AS (
-  SELECT s.*
-  FROM S_SRC s
-  LEFT JOIN H_CUR h USING (layer_SID)
-  WHERE
-    h.layer_SID IS NULL
-    OR (
-      h.ID                 IS DISTINCT FROM s.ID OR
-      h.plant              IS DISTINCT FROM s.plant OR
-      h.plant_part_wet     IS DISTINCT FROM s.plant_part_wet OR
-      h.plant_part_dry     IS DISTINCT FROM s.plant_part_dry OR
-      h.job_wet            IS DISTINCT FROM s.job_wet OR
-      h.product_name_wet   IS DISTINCT FROM s.product_name_wet OR
-      h.product_number_wet IS DISTINCT FROM s.product_number_wet OR
-      h.charge_wet_start   IS DISTINCT FROM s.charge_wet_start OR
-      h.charge_wet_end     IS DISTINCT FROM s.charge_wet_end OR
-      h.shift_wet_start    IS DISTINCT FROM s.shift_wet_start OR
-      h.shift_wet_end      IS DISTINCT FROM s.shift_wet_end OR
-      h.shift_wet_number   IS DISTINCT FROM s.shift_wet_number OR
-      h.charge_SID_wet     IS DISTINCT FROM s.charge_SID_wet OR
-      h.job_dry            IS DISTINCT FROM s.job_dry OR
-      h.product_name_dry   IS DISTINCT FROM s.product_name_dry OR
-      h.product_number_dry IS DISTINCT FROM s.product_number_dry OR
-      h.charge_dry_start   IS DISTINCT FROM s.charge_dry_start OR
-      h.charge_dry_end     IS DISTINCT FROM s.charge_dry_end OR
-      h.shift_dry_start    IS DISTINCT FROM s.shift_dry_start OR
-      h.shift_dry_end      IS DISTINCT FROM s.shift_dry_end OR
-      h.shift_dry_number   IS DISTINCT FROM s.shift_dry_number OR
-      h.charge_SID_dry     IS DISTINCT FROM s.charge_SID_dry OR
-      h.quality            IS DISTINCT FROM s.quality OR
-      h.timestamp          IS DISTINCT FROM s.timestamp OR
-      h.to_chamber         IS DISTINCT FROM s.to_chamber OR
-      h.from_chamber       IS DISTINCT FROM s.from_chamber OR
-      h.dry_time           IS DISTINCT FROM s.dry_time OR
-      h.stacked            IS DISTINCT FROM s.stacked OR
-      h.modified           IS DISTINCT FROM s.modified OR
-      h.previb_time        IS DISTINCT FROM s.previb_time OR
-      h.mainvib_time       IS DISTINCT FROM s.mainvib_time OR
-      h.previb_speed       IS DISTINCT FROM s.previb_speed OR
-      h.mainvib_speed      IS DISTINCT FROM s.mainvib_speed OR
-      h.previb_angle       IS DISTINCT FROM s.previb_angle OR
-      h.mainvib_angle      IS DISTINCT FROM s.mainvib_angle OR
-      h.tamphead_preasure  IS DISTINCT FROM s.tamphead_preasure OR
-      h.height             IS DISTINCT FROM s.height OR
-      h.height_avg_shv     IS DISTINCT FROM s.height_avg_shv OR
-      h.height_1_shv       IS DISTINCT FROM s.height_1_shv OR
-      h.height_2_shv       IS DISTINCT FROM s.height_2_shv OR
-      h.height_3_shv       IS DISTINCT FROM s.height_3_shv OR
-      h.weigh_shv          IS DISTINCT FROM s.weigh_shv
-    )
-),
-
-CHANGED_KEYS AS (
-  SELECT DISTINCT h.layer_SID, h.valid_from
-  FROM ${self()} h
-  JOIN NEW_OR_CHANGED s USING (layer_SID)
-  WHERE h.is_current = TRUE
-)
-
-SELECT
-  n.ID,
-  n.layer_SID,
-  n.plant,
-  n.plant_part_wet,
-  n.plant_part_dry,
-  n.job_wet,
-  n.product_name_wet,
-  n.product_number_wet,
-  n.charge_wet_start,
-  n.charge_wet_end,
-  n.shift_wet_start,
-  n.shift_wet_end,
-  n.shift_wet_number,
-  n.charge_SID_wet,
-  n.job_dry,
-  n.product_name_dry,
-  n.product_number_dry,
-  n.charge_dry_start,
-  n.charge_dry_end,
-  n.shift_dry_start,
-  n.shift_dry_end,
-  n.shift_dry_number,
-  n.charge_SID_dry,
-  n.quality,
-  n.timestamp,
-  n.to_chamber,
-  n.from_chamber,
-  n.dry_time,
-  n.stacked,
-  n.modified,
-  n.previb_time,
-  n.mainvib_time,
-  n.previb_speed,
-  n.mainvib_speed,
-  n.previb_angle,
-  n.mainvib_angle,
-  n.tamphead_preasure,
-  n.height,
-  n.height_avg_shv,
-  n.height_1_shv,
-  n.height_2_shv,
-  n.height_3_shv,
-  n.weigh_shv,
-  CURRENT_TIMESTAMP       AS valid_from,
-  CAST(NULL AS TIMESTAMP) AS valid_to,
-  TRUE AS is_current,
-  "Линия 2" AS line
-FROM NEW_OR_CHANGED n
-
-UNION ALL
-
-SELECT
-  h.ID,
-  h.layer_SID,
-  h.plant,
-  h.plant_part_wet,
-  h.plant_part_dry,
-  h.job_wet,
-  h.product_name_wet,
-  h.product_number_wet,
-  h.charge_wet_start,
-  h.charge_wet_end,
-  h.shift_wet_start,
-  h.shift_wet_end,
-  h.shift_wet_number,
-  h.charge_SID_wet,
-  h.job_dry,
-  h.product_name_dry,
-  h.product_number_dry,
-  h.charge_dry_start,
-  h.charge_dry_end,
-  h.shift_dry_start,
-  h.shift_dry_end,
-  h.shift_dry_number,
-  h.charge_SID_dry,
-  h.quality,
-  h.timestamp,
-  h.to_chamber,
-  h.from_chamber,
-  h.dry_time,
-  h.stacked,
-  h.modified,
-  h.previb_time,
-  h.mainvib_time,
-  h.previb_speed,
-  h.mainvib_speed,
-  h.previb_angle,
-  h.mainvib_angle,
-  h.tamphead_preasure,
-  h.height,
-  h.height_avg_shv,
-  h.height_1_shv,
-  h.height_2_shv,
-  h.height_3_shv,
-  h.weigh_shv,
-  h.valid_from,
-  CURRENT_TIMESTAMP AS valid_to,
-  FALSE AS is_current,
-  "Линия 2" AS line
-FROM ${self()} h
-JOIN CHANGED_KEYS ck
-  ON h.layer_SID = ck.layer_SID
- AND h.valid_from = ck.valid_from
-WHERE h.is_current = TRUE
-
-`, `
-
-WITH S_SRC AS (
-  SELECT
-    CAST(ID AS INT64)                          AS ID,
-    CAST(layer_SID AS INT64)                   AS layer_SID,
-    CAST(plant AS STRING)                      AS plant,
-    CAST(plant_part_wet AS STRING)             AS plant_part_wet,
-    CAST(plant_part_dry AS STRING)             AS plant_part_dry,
-    CAST(job_wet AS STRING)                    AS job_wet,
-    CAST(product_name_wet AS STRING)           AS product_name_wet,
-    CAST(product_number_wet AS STRING)         AS product_number_wet,
-    
-    DATETIME(TIMESTAMP_SECONDS(charge_wet_start)) AS charge_wet_start,
-    DATETIME(TIMESTAMP_SECONDS(charge_wet_end))   AS charge_wet_end,
-    DATETIME(TIMESTAMP_SECONDS(shift_wet_start))  AS shift_wet_start,
-    DATETIME(TIMESTAMP_SECONDS(shift_wet_end))    AS shift_wet_end,
-
-    CAST(shift_wet_number AS INT64)            AS shift_wet_number,
-    CAST(charge_SID_wet AS INT64)              AS charge_SID_wet,
-    CAST(job_dry AS STRING)                    AS job_dry,
-    CAST(product_name_dry AS STRING)           AS product_name_dry,
-    CAST(product_number_dry AS STRING)         AS product_number_dry,
-
-    DATETIME(TIMESTAMP_SECONDS(charge_dry_start)) AS charge_dry_start,
-    DATETIME(TIMESTAMP_SECONDS(charge_dry_end))   AS charge_dry_end,
-    DATETIME(TIMESTAMP_SECONDS(shift_dry_start))  AS shift_dry_start,
-    DATETIME(TIMESTAMP_SECONDS(shift_dry_end))    AS shift_dry_end,
-
-    CAST(shift_dry_number AS INT64)            AS shift_dry_number,
-    CAST(charge_SID_dry AS INT64)              AS charge_SID_dry,
-    CAST(quality AS INT64)                     AS quality,
-    
-    -- timestamp
-    CASE 
-      WHEN timestamp IS NULL OR timestamp = 'NaT' THEN NULL
-      ELSE COALESCE(
-        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', timestamp),
-        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', timestamp)
-      )
-    END AS timestamp,
-    
-    CASE 
-      WHEN to_chamber IS NULL OR to_chamber = 'NaT' THEN NULL
-      ELSE COALESCE(
-        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', to_chamber),
-        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', to_chamber)
-      )
-    END AS to_chamber,
-    
-    CASE 
-      WHEN from_chamber IS NULL OR from_chamber = 'NaT' THEN NULL
-      ELSE COALESCE(
-        PARSE_DATETIME('%Y-%m-%d %H:%M:%E3S', from_chamber),
-        PARSE_DATETIME('%Y-%m-%d %H:%M:%S', from_chamber)
-      )
-    END AS from_chamber,
-    
-    -- stacked / modified (nanoseconds → DATETIME)
-    CASE 
-      WHEN stacked IS NULL OR stacked = 0 THEN NULL
-      ELSE DATETIME(TIMESTAMP_MICROS(CAST(stacked / 1000 AS INT64)))
-    END AS stacked,
-    
-    CASE 
-      WHEN modified IS NULL OR modified = 0 THEN NULL
-      ELSE DATETIME(TIMESTAMP_MICROS(CAST(modified / 1000 AS INT64)))
-    END AS modified,
-    
-    -- dry_time
-    CASE 
-      WHEN dry_time < 0 THEN NULL
-      ELSE SAFE_CAST(dry_time AS NUMERIC)
-    END AS dry_time,
-
-    CAST(previb_time AS FLOAT64)               AS previb_time,
-    CAST(mainvib_time AS FLOAT64)              AS mainvib_time,
-    CAST(previb_speed AS FLOAT64)              AS previb_speed,
-    CAST(mainvib_speed AS FLOAT64)             AS mainvib_speed,
-    CAST(previb_angle AS FLOAT64)              AS previb_angle,
-    CAST(mainvib_angle AS FLOAT64)             AS mainvib_angle,
-    CAST(tamphead_preasure AS FLOAT64)         AS tamphead_preasure,
-    CAST(height AS FLOAT64)                    AS height,
-    CAST(height_avg_shv AS FLOAT64)            AS height_avg_shv,
-    CAST(height_1_shv AS FLOAT64)              AS height_1_shv,
-    CAST(height_2_shv AS FLOAT64)              AS height_2_shv,
-    CAST(height_3_shv AS FLOAT64)              AS height_3_shv,
-    CAST(weigh_shv AS FLOAT64)                 AS weigh_shv
   FROM ${ref("external_staging_hess_layer_line_2")}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY layer_SID ORDER BY ID DESC) = 1
+
+) S
+
+ON H.layer_SID = S.layer_SID AND H.valid_to IS NULL
+
+-- 🔥 закрываем старую запись
+WHEN MATCHED AND (
+     H.timestamp IS DISTINCT FROM S.timestamp
+  OR H.quality IS DISTINCT FROM S.quality
+  OR H.plant IS DISTINCT FROM S.plant
 )
+THEN UPDATE SET
+  valid_to = CURRENT_TIMESTAMP(),
+  is_current = FALSE
 
-SELECT
-  ID,
-  layer_SID,
-  plant,
-  plant_part_wet,
-  plant_part_dry,
-  job_wet,
-  product_name_wet,
-  product_number_wet,
-  charge_wet_start,
-  charge_wet_end,
-  shift_wet_start,
-  shift_wet_end,
-  shift_wet_number,
-  charge_SID_wet,
-  job_dry,
-  product_name_dry,
-  product_number_dry,
-  charge_dry_start,
-  charge_dry_end,
-  shift_dry_start,
-  shift_dry_end,
-  shift_dry_number,
-  charge_SID_dry,
-  quality,
-  timestamp,
-  to_chamber,
-  from_chamber,
+-- 🔥 вставляем новую
+WHEN NOT MATCHED THEN
+INSERT (
+  ID, layer_SID, plant, plant_part_wet, plant_part_dry,
+  job_wet, product_name_wet, product_number_wet,
+  charge_wet_start, charge_wet_end,
+  shift_wet_start, shift_wet_end,
+  shift_wet_number, charge_SID_wet,
+  job_dry, product_name_dry, product_number_dry,
+  charge_dry_start, charge_dry_end,
+  shift_dry_start, shift_dry_end,
+  shift_dry_number, charge_SID_dry,
+  quality, timestamp, to_chamber, from_chamber,
   dry_time,
-  stacked,
-  modified,
-  previb_time,
-  mainvib_time,
-  previb_speed,
-  mainvib_speed,
-  previb_angle,
-  mainvib_angle,
-  tamphead_preasure,
-  height,
-  height_avg_shv,
-  height_1_shv,
-  height_2_shv,
-  height_3_shv,
-  weigh_shv,
-  CURRENT_TIMESTAMP AS valid_from,
-  CAST(NULL AS TIMESTAMP) AS valid_to,
-  TRUE AS is_current,
-  "Линия 2" AS line
-FROM S_SRC
-
-`)} 
+  line,
+  valid_from, valid_to, is_current
+)
+VALUES (
+  S.ID, S.layer_SID, S.plant, S.plant_part_wet, S.plant_part_dry,
+  S.job_wet, S.product_name_wet, S.product_number_wet,
+  S.charge_wet_start, S.charge_wet_end,
+  S.shift_wet_start, S.shift_wet_end,
+  S.shift_wet_number, S.charge_SID_wet,
+  S.job_dry, S.product_name_dry, S.product_number_dry,
+  S.charge_dry_start, S.charge_dry_end,
+  S.shift_dry_start, S.shift_dry_end,
+  S.shift_dry_number, S.charge_SID_dry,
+  S.quality, S.timestamp, S.to_chamber, S.from_chamber,
+  S.dry_time,
+  S.line,
+  CURRENT_TIMESTAMP(), NULL, TRUE
+);
