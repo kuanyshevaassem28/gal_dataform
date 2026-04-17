@@ -157,7 +157,7 @@ trips AS (
        AND t.dut_avg_lt_per_100km > COALESCE(b.max_l100, bdef.max_l100) THEN NULL
       ELSE t.dut_avg_lt_per_100km
     END AS cons_sanitized
-  FROM `galery-22579.gal_wialon_marts.wialon_trips_vehicles_marts2` t
+  FROM ${ref("wialon_trips_vehicles_marts2")} t
   LEFT JOIN bounds b
     ON t.vehicle_type = b.vehicle_type
   LEFT JOIN bounds bdef
