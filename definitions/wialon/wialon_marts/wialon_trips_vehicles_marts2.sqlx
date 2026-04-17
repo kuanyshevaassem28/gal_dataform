@@ -149,7 +149,7 @@ END
 FROM
   AllCombinations AS ac
 LEFT JOIN
-  `galery-22579.gal_wialon_marts.wialon_trips_vehicles_marts` AS t
+  ${ref("wialon_trips_vehicles_marts")} AS t
 ON
   ac.trip_date = CAST(t.date AS DATE)
   AND ac.registration_number_clean = t.registration_number_clean
