@@ -47,9 +47,9 @@ zames_with_avzak AS (
   SELECT
     az.ZAMSTUNLTIME,
     jt.AV_ZAK
-  FROM `galery-22579.gal_bsu_pp3.history_bsu_pp3_arc_zames` az
+  FROM ${ref("history_bsu_pp3_arc_zames")} az
   JOIN
-    `galery-22579.gal_bsu_pp3.history_bsu_pp3_job_title` jt
+    ${ref("history_bsu_pp3_job_title")} jt
     ON az.ZAKASID = jt.ORDERID
   WHERE
     az.is_current = TRUE
