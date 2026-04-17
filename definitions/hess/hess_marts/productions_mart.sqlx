@@ -128,7 +128,7 @@ base AS (
                 IF(STRPOS(pm.thickness, 'ММ') > 0, STRPOS(pm.thickness, 'ММ'), LENGTH(pm.thickness) + 1)
             ) - 1)
         )
-    LEFT JOIN `galery-22579.gal_unf.history_unf_production_forms` pf 
+    LEFT JOIN ${ref("history_unf_production_forms")} pf 
         ON d.document_number = pf.document_number
         AND d.document_year = EXTRACT(YEAR FROM pf.document_date)
         AND pf.is_current = TRUE
