@@ -192,22 +192,30 @@ bsu_distributed AS (
   SELECT
     e.charge_SID,
     e.segment_number,
-    e.job_number,
+    TRIM(job_number_clean) AS job_number,
     e.plant_part_SID,
     e.total_cycles,
-    SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID) AS job_total_cycles,
+
+    SUM(e.total_cycles) OVER (PARTITION BY TRIM(job_number_clean), e.plant_part_SID) AS job_total_cycles,
+
     SAFE_DIVIDE(
       e.total_cycles,
-      NULLIF(SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID), 0)
+      NULLIF(SUM(e.total_cycles) OVER (PARTITION BY TRIM(job_number_clean), e.plant_part_SID), 0)
     ) AS job_share,
+
     bsu.total_factweight / 1000.0 AS bsu_total_weight_t,
+
     SAFE_DIVIDE(
       e.total_cycles,
-      NULLIF(SUM(e.total_cycles) OVER (PARTITION BY e.job_number, e.plant_part_SID), 0)
+      NULLIF(SUM(e.total_cycles) OVER (PARTITION BY TRIM(job_number_clean), e.plant_part_SID), 0)
     ) * (bsu.total_factweight / 1000.0) AS bsu_distributed_weight_t
-  FROM erp_data e
+
+  FROM erp_data e,
+ 
+  UNNEST(SPLIT(e.job_number, ',')) AS job_number_clean
+
   LEFT JOIN `galery-22579.gal_bsu_pp3_mart.bsu_pp3_job_year_weight` bsu
-    ON e.job_number = bsu.av_zak
+    ON TRIM(job_number_clean) = bsu.av_zak
     AND EXTRACT(YEAR FROM e.production_day) = bsu.year_created
 )
 
