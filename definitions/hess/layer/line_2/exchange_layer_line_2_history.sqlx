@@ -42,7 +42,6 @@ config {
     line: "Линия"
   }
 }
-
 MERGE ${self()} H
 USING (
 
@@ -151,7 +150,7 @@ USING (
 
     "Линия 2" AS line
 
-  FROM ${ref("external_staging_hess_layer_line_2")}
+  FROM ${ref("external_staging_hess_layer_line_2")} 
   QUALIFY ROW_NUMBER() OVER (PARTITION BY layer_SID ORDER BY ID DESC) = 1
 
 ) S
