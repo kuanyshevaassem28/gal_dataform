@@ -1,5 +1,5 @@
 config {
-  type: "declaration",
+  type: "view",
   schema: "gal_hess_marts",
   name: "normalized_charges2"
 }
