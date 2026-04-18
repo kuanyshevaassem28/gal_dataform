@@ -3,6 +3,11 @@ config {
   schema: "gal_bsu_pp2_mart",
   name: "bsu_pp2_job_year_weight",
   tags: ["bsu_pp2_job_title", "bsu_pp2_arc_zames", "bsu_pp2_arc_components", "marts"],
+  dependencies: [
+    "history_bsu_pp2_arc_components",
+    "history_bsu_pp2_arc_zames",
+    "history_bsu_pp2_job_title"
+  ],
   description: "Март витрина по актуальным данным (SCD2) для Zenith Charge PP2"
 }
 
