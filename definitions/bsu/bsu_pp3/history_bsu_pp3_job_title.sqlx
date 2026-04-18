@@ -1,6 +1,0 @@
-config {
-  type: "declaration",
-  database: "galery-22579",
-  schema: "gal_bsu_pp3",
-  name: "history_bsu_pp3_job_title"
-}
