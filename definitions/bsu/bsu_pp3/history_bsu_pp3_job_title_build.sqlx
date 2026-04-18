@@ -1,7 +1,7 @@
 config {
   type: "operations",
   schema: "gal_bsu_pp3",
-  name: "history_bsu_pp3_job_title_build",
+  name: "history_bsu_pp3_job_title",
   hasOutput: true,
   dependencies: ["staging_bsu_pp3_job_title"], 
   tags: ["bsu_pp3_job_title", "history", "scd2"],
