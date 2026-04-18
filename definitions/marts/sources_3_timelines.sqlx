@@ -1,7 +1,13 @@
 config {
   type: "table",
   schema: "gal_production_commbined",
-  name: "sources_3_timelines"
+  name: "sources_3_timelines"',
+  dependencies: [
+    "history_measurements",
+    "zenith_charge_pp2_marts",
+    "history_bsu_pp2_arc_zames",
+    "history_bsu_pp2_job_title"
+  ]
 }
  
 WITH
