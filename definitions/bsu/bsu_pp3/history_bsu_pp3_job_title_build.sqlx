@@ -1,9 +1,9 @@
 config {
   type: "operations",
   schema: "gal_bsu_pp3",
-  name: "history_bsu_pp3_job_title",
+  name: "history_bsu_pp3_job_title_build",
   hasOutput: true,
-  dependencies: ["staging_bsu_pp3_job_title"],
+  dependencies: ["staging_bsu_pp3_job_title"], 
   tags: ["bsu_pp3_job_title", "history", "scd2"],
 
   description: "BSU PP3 JOB_TITLE — SCD2 история заказов. Surrogate key = SHA256(ORDERID). Поддерживает версионность через is_current, valid_from, valid_to.",
