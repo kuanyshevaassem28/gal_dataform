@@ -14,8 +14,7 @@ config {
 WITH unf_products AS (
   SELECT *
   FROM (
-    SELECT
-      *,
+    SELECT *,
       ROW_NUMBER() OVER (
         PARTITION BY document_number, EXTRACT(YEAR FROM document_date)
         ORDER BY quantity DESC
@@ -70,31 +69,23 @@ aggregated_reasons_stop AS (
     CAST(NULL AS INT64)  AS charge_SID,
     CAST(NULL AS STRING) AS job_number,
     CAST(NULL AS INT64)  AS segment_number,
-
     j.shift_number,
     j.plant_part_sid AS plant_part_SID,
     CAST(j.reason_code AS STRING) AS reason,
     j.sz_reason,
-
     j.dt_start,
     j.dt_end,
-
     j.events_count,
     j.duration_sec,
-
     CAST(NULL AS STRING) AS charge_sid_grouped,
     FALSE AS is_production_reason,
-
     j.date,
     j.reason_name AS name_ru,
-
     'Stop' AS reason_group,
     j.reason_type,
     "" AS comment,
     j.site,
-
     SAFE_CAST(CONCAT(SUBSTR(j.code3, 1, 1), '.', SUBSTR(j.code3, 2, 2)) AS FLOAT64) AS order_field,
-
     CAST(NULL AS INT64) AS norma_val_sec,
     CAST(NULL AS STRING) AS norm_type,
     CAST(NULL AS STRING) AS nomenclature_name,
@@ -103,7 +94,7 @@ aggregated_reasons_stop AS (
   FROM j
 )
 
--- ===== ERP часть =====
+-- ===== ERP =====
 SELECT
   erp.charge_SID,
   erp.job_number,
@@ -120,14 +111,14 @@ SELECT
   CAST(NULL AS INT64) AS events_count,
 
   CASE
-    WHEN reasons.name = 'Boards'           THEN erp.on_boards
-    WHEN reasons.name = 'Product eject'    THEN erp.on_product_transport
-    WHEN reasons.name = 'C-Mix'            THEN erp.on_core_concrete
-    WHEN reasons.name = 'F-Mix'            THEN erp.on_facing_concrete
-    WHEN reasons.name = 'Production'       THEN erp.manual_operation
-    WHEN reasons.name = 'Auto'             THEN erp.automatic_operation
-    WHEN reasons.name = 'Cleaning'         THEN erp.setup_operation
-    WHEN reasons.name = 'General_fault'    THEN erp.plant_malfunction
+    WHEN reasons.name = 'Boards'        THEN erp.on_boards
+    WHEN reasons.name = 'Product eject' THEN erp.on_product_transport
+    WHEN reasons.name = 'C-Mix'         THEN erp.on_core_concrete
+    WHEN reasons.name = 'F-Mix'         THEN erp.on_facing_concrete
+    WHEN reasons.name = 'Production'    THEN erp.manual_operation
+    WHEN reasons.name = 'Auto'          THEN erp.automatic_operation
+    WHEN reasons.name = 'Cleaning'      THEN erp.setup_operation
+    WHEN reasons.name = 'General_fault' THEN erp.plant_malfunction
     ELSE NULL
   END AS duration_sec,
 
@@ -168,7 +159,33 @@ LEFT JOIN unf_products pp
 
 WHERE reasons.name IN ('Boards','Product eject','C-Mix','F-Mix','Production','Auto')
 
--- ===== UNION с UNF downtime =====
+-- ===== UNION =====
 UNION ALL
 
-SELECT * FROM aggregated_reasons_stop
+SELECT
+  charge_SID,
+  job_number,
+  segment_number,
+  shift_number,
+  plant_part_SID,
+  reason,
+  sz_reason,
+  dt_start,
+  dt_end,
+  events_count,
+  duration_sec,
+  charge_sid_grouped,
+  is_production_reason,
+  date,
+  name_ru,
+  reason_group,
+  reason_type,
+  comment,
+  site,
+  order_field,
+  norma_val_sec,
+  norm_type,
+  nomenclature_name,
+  variation_name,
+  unit_name
+FROM aggregated_reasons_stop
